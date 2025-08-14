@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pandas
+pydantic
+python-multipart
+aiofiles
+python-dotenv
+# ollama-client (install and configure separately if available)
+# Example: pip install ollama-client

@@ -1,0 +1,5 @@
+transaction_id,date,country,amount,discount,rebate,total_invoice_amount
+1,01-02-2025,Bangladesh,1000,100,0,900
+2,2025/02/01,Bangladesh,2000,200,50,1850
+3,2025-02-01,United States,-1500,50,0,-1450
+3,2025-02-01,Bangladesh,2000,200,50,1850

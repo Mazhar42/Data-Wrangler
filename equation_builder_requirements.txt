@@ -1,0 +1,45 @@
+﻿Equation Builder Feature Requirements
+This document outlines the requirements for implementing an Equation Builder feature in a React (frontend) and FastAPI (backend) application. The feature allows users to upload an Excel file, build custom formulas using available columns, preview the results, and optionally save the formulas.
+1. Backend Requirements (FastAPI + Pandas)
+Goal: Accept an Excel file, store it temporarily, allow users to build formulas, apply them to the DataFrame, and return a preview.
+Endpoints:
+• POST /upload_excel
+ - Accepts Excel/CSV upload
+ - Reads file into Pandas DataFrame
+ - Returns list of column names and first 10 rows for preview
+• POST /apply_formula
+ - Accepts formula name and formula expression
+ - Applies formula to stored DataFrame using pandas.eval or custom parser
+ - Returns updated preview with the calculated column
+Implementation Notes:
+• Store DataFrame in a session dictionary or cache with a UUID as key
+• Sanitize formulas to prevent code injection
+• Limit allowed operators and functions (+, -, *, /, abs, round)
+• Limit preview rows to improve performance
+2. Frontend Requirements (React + TailwindCSS)
+Goal: Allow the user to upload a file, build a formula visually, preview the results, and send the formula to the backend.
+Components:
+• UploadFile Component
+ - Handles file selection and uploads
+ - Displays preview table
+ - Stores returned columns in state
+• EquationBuilder Component
+ - Lets user select columns and operators
+ - Displays formula preview
+ - Sends formula to backend for preview
+• DataPreviewTable Component
+ - Displays preview data in a styled table
+ - Handles dynamic columns
+Implementation Notes:
+• Store session_id returned from backend to identify the DataFrame
+• Use React hooks (useState, useEffect) for state management
+• Style with Tailwind CSS
+• Use Axios or Fetch for API requests
+3. Data Flow
+[User Uploads Excel] → POST /upload_excel → [Backend Reads DF] → Return {columns, preview}
+  ↓
+[User Builds Formula in UI] → POST /apply_formula {formula_name, formula_expression, session_id}
+  ↓
+[Backend Applies Formula] → Return updated preview
+  ↓
+[Frontend Updates Table Preview]
