@@ -4,6 +4,97 @@ import os
 from fastapi import HTTPException
 from dateutil.parser import parse as date_parse
 
+def apply_filter(df: pd.DataFrame, criteria: dict):
+    """
+    Filters a DataFrame based on the given criteria.
+    """
+    if not criteria:
+        return df
+
+    column = criteria.get('column')
+    operator = criteria.get('operator')
+    compare_target = criteria.get('compareTarget')
+
+    if not all([column, operator, compare_target]):
+        raise ValueError("Invalid filter criteria")
+
+    if column not in df.columns:
+        raise ValueError(f"Column '{column}' not found in DataFrame.")
+
+    target_type = compare_target.get('type')
+    target_value = compare_target.get('value')
+
+    if target_type == 'column':
+        if target_value not in df.columns:
+            raise ValueError(f"Compare column '{target_value}' not found in DataFrame.")
+        # Compare two columns
+        if operator == '>':
+            df = df[df[column] > df[target_value]]
+        elif operator == '<':
+            df = df[df[column] < df[target_value]]
+        elif operator == '==':
+            df = df[df[column] == df[target_value]]
+        elif operator == '!=':
+            df = df[df[column] != df[target_value]]
+        elif operator == '>=':
+            df = df[df[column] >= df[target_value]]
+        elif operator == '<=':
+            df = df[df[column] <= df[target_value]]
+        else:
+            raise ValueError(f"Unsupported operator for column comparison: {operator}")
+    elif target_type == 'value':
+        # Compare column with a custom value
+        is_numeric_col = pd.api.types.is_numeric_dtype(df[column])
+        
+        if operator in ['>', '<', '==', '!=', '>=', '<=']:
+            try:
+                if is_numeric_col:
+                    target_value = pd.to_numeric(target_value)
+            except (ValueError, TypeError):
+                if operator in ['>', '<', '>=', '<=']:
+                    return df # Cannot perform numeric comparison
+        
+        if operator == '>':
+            if is_numeric_col:
+                df = df[df[column] > target_value]
+        elif operator == '<':
+            if is_numeric_col:
+                df = df[df[column] < target_value]
+        elif operator == '==':
+            if is_numeric_col:
+                df = df[df[column] == target_value]
+            else:
+                df = df[df[column].astype(str) == str(target_value)]
+        elif operator == '!=':
+            if is_numeric_col:
+                df = df[df[column] != target_value]
+            else:
+                df = df[df[column].astype(str) != str(target_value)]
+        elif operator == '>=':
+            if is_numeric_col:
+                df = df[df[column] >= target_value]
+        elif operator == '<=':
+            if is_numeric_col:
+                df = df[df[column] <= target_value]
+        elif operator == 'contains':
+            df = df[df[column].astype(str).str.contains(target_value, case=False, na=False)]
+        elif operator == 'not_contains':
+            df = df[~df[column].astype(str).str.contains(target_value, case=False, na=False)]
+        elif operator == 'starts_with':
+            df = df[df[column].astype(str).str.startswith(target_value, na=False)]
+        elif operator == 'ends_with':
+            df = df[df[column].astype(str).str.endswith(target_value, na=False)]
+        elif operator == 'is_empty':
+            df = df[df[column].isnull() | (df[column] == '')]
+        elif operator == 'is_not_empty':
+            df = df[df[column].notnull() & (df[column] != '')]
+        else:
+            raise ValueError(f"Unsupported operator: {operator}")
+    else:
+        raise ValueError(f"Unsupported compare target type: {target_type}")
+
+    return df
+
 def read_tabular(path):
     """
     Read CSV or Excel into pandas DataFrame.
@@ -16,6 +107,10 @@ def read_tabular(path):
             return pd.read_excel(path)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error reading file: {e}")
+
+
+
+
 
 def detect_unique_columns(df, max_combo=3):
     n = len(df)
@@ -104,4 +199,60 @@ def correct_country_spelling(df: pd.DataFrame, column_name: str, mapping: dict =
     
     # Apply the mapping
     df[column_name] = df[column_name].replace(mapping)
+    return df
+
+def apply_cell_edit(df: pd.DataFrame, edit: dict):
+    """
+    Applies a cell edit to the DataFrame.
+    """
+    if not edit:
+        return df
+
+    rowIndex = edit.get('rowIndex')
+    columnKey = edit.get('columnKey')
+    oldValue = edit.get('oldValue')
+    newValue = edit.get('newValue')
+    applyToAll = edit.get('applyToAll')
+
+    if not all([rowIndex is not None, columnKey, oldValue is not None, newValue is not None, applyToAll is not None]):
+        raise ValueError("Invalid cell edit")
+
+    if columnKey not in df.columns:
+        raise ValueError(f"Column '{columnKey}' not found in DataFrame.")
+
+    is_numeric_col = pd.api.types.is_numeric_dtype(df[columnKey])
+
+    if is_numeric_col:
+        try:
+            oldValue = pd.to_numeric(oldValue)
+            newValue = pd.to_numeric(newValue)
+        except (ValueError, TypeError):
+            pass # Keep them as strings if conversion fails
+
+    if applyToAll:
+        df[columnKey] = df[columnKey].replace(oldValue, newValue)
+    else:
+        if rowIndex >= len(df):
+            raise ValueError(f"Row index {rowIndex} is out of bounds.")
+        df.at[rowIndex, columnKey] = newValue
+        
+    return df
+
+def apply_column_search(df: pd.DataFrame, search: dict):
+    """
+    Applies a column search to the DataFrame.
+    """
+    if not search:
+        return df
+
+    column = search.get('column')
+    searchTerm = search.get('searchTerm')
+
+    if not all([column, searchTerm]):
+        return df # Or raise an error, but returning df is safer
+
+    if column not in df.columns:
+        raise ValueError(f"Column '{column}' not found in DataFrame.")
+
+    df = df[df[column].astype(str).str.contains(searchTerm, case=False, na=False)]
     return df

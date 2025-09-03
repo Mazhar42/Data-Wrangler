@@ -1,0 +1,5 @@
+.env
+data_cleansing.db
+env
+__pycache__/
+uploads/

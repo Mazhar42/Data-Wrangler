@@ -1,9 +1,0 @@
-OrderID,CustomerName,OrderDate,Country,Product,Quantity,Price
-101,Alice,2023-01-15,United States,A,2,10.0
-102,Bob,2023-01-20,United States,B,1,25.5
-103,Charlie,2023-01-25,United Kingdom,C,3,5.0
-104,David,2023-02-01,United Kingdom,A,1,10.0
-105,Eve,2023-02-05,United Kingdom,D,5,12.0
-106,Frank,2023-03-10,United States,B,2,25.5
-107,Grace,2023-03-15,Canada,C,1,5.0
-108,Henry,2023-03-16,Germany,A,4,10.0

@@ -6,5 +6,19 @@ pydantic
 python-multipart
 aiofiles
 python-dotenv
+asteval
+alembic
+pytest
+psycopg2-binary
+openpyxl
+# Microsoft Authentication and JWT
+python-jose[cryptography]
+passlib[bcrypt]
+httpx
+msal
+python-multipart
+# Google OAuth
+authlib
+requests
 # ollama-client (install and configure separately if available)
 # Example: pip install ollama-client
