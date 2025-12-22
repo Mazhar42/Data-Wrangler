@@ -47,6 +47,7 @@ class FormulaBase(BaseModel):
 
 class Formula(FormulaBase):
     id: int
+    project_id: int
 
     class Config:
         from_attributes = True
@@ -58,15 +59,18 @@ class Modification(BaseModel):
     formula: Optional[Dict[str, Any]] = None
     edit: Optional[Dict[str, Any]] = None
     search: Optional[Dict[str, Any]] = None
+    remove_duplicates: Optional[bool] = False
+    search_query: Optional[str] = None
 
 class ModificationRequest(BaseModel):
     modifications: List[Modification]
     format: str
 
+class ApplyModificationRequest(BaseModel):
+    modifications: List[Modification]
+
 class PreviewModificationRequest(BaseModel):
     modifications: List[Modification]
-    page: Optional[int] = 1
-    per_page: Optional[int] = 50
 
 class StatsRequest(BaseModel):
     column_names: List[str]
@@ -78,7 +82,6 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: Optional[str] = None
-    microsoft_id: Optional[str] = None
     google_id: Optional[str] = None
     provider: str = "email"
 
@@ -92,7 +95,6 @@ class UserRegister(UserBase):
 class User(UserBase):
     id: int
     provider: str
-    microsoft_id: Optional[str] = None
     google_id: Optional[str] = None
     is_active: bool
     is_verified: bool
@@ -129,13 +131,6 @@ class ProjectWithFiles(Project):
     class Config:
         from_attributes = True
 
-# Microsoft OAuth schemas
-class MicrosoftUserInfo(BaseModel):
-    id: str
-    displayName: str
-    userPrincipalName: str
-    mail: Optional[str] = None
-
 # Google OAuth schemas
 class GoogleUserInfo(BaseModel):
     id: str
@@ -147,6 +142,10 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str
     user: User
+    refresh_token: str
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
 
 class HistoryBase(BaseModel):
     operation: str
@@ -165,3 +164,85 @@ class History(HistoryBase):
 
     class Config:
         from_attributes = True
+
+class Prompt(BaseModel):
+    prompt: str
+    file_id: Optional[int] = None
+
+class ChatCleanseRequest(BaseModel):
+    file_id: int
+    prompt: str
+
+
+class AICleanseRequest(BaseModel):
+    column_to_cleanse: str
+    user_prompt: str
+
+class GroupSuggestionsRequest(BaseModel):
+    column_name: str
+    threshold: Optional[int] = 85
+
+class AnomalyDetectionRequest(BaseModel):
+    column_name: str
+    detection_type: str # e.g., 'country', 'company', 'general'
+
+class ConversationMessageBase(BaseModel):
+    role: str
+    content: str
+
+class ConversationMessage(ConversationMessageBase):
+    id: int
+    conversation_id: int
+    sender: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class ConversationBase(BaseModel):
+    user_id: int
+    project_id: int
+    file_id: int
+
+class Conversation(ConversationBase):
+    id: int
+    created_at: datetime
+    messages: List[ConversationMessage] = []
+
+    class Config:
+        from_attributes = True
+
+class Tool(BaseModel):
+    tool: str
+    parameters: Dict[str, Any]
+
+# === User Management Admin Schemas ===
+class RoleBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class RoleCreate(RoleBase):
+    pass
+
+class Role(RoleBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+class GroupBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class GroupCreate(GroupBase):
+    pass
+
+class Group(GroupBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+class UserAssignment(BaseModel):
+    user_id: int
+    target_id: int

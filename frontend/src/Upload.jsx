@@ -2,7 +2,7 @@ import React from 'react';
 
 const Upload = ({ handleFileChange, handleUpload, loading }) => {
   return (
-    <div className="bg-card-background p-6 rounded-lg shadow-md">
+    <div className="bg-white p-6 rounded-lg shadow-md">
       <h2 className="text-xl font-semibold mb-4">Upload File</h2>
       
       {loading && (
@@ -32,7 +32,7 @@ const Upload = ({ handleFileChange, handleUpload, loading }) => {
         />
         <button
           onClick={handleUpload}
-          className="bg-button-background text-button-text px-6 py-2 rounded-full hover:bg-violet-600 disabled:bg-gray-400 disabled:cursor-not-allowed min-w-[100px] flex items-center justify-center"
+          className="bg-violet-500 text-white px-6 py-2 rounded-full hover:bg-violet-600 disabled:bg-gray-400 disabled:cursor-not-allowed min-w-[100px] flex items-center justify-center"
           disabled={loading}
         >
           {loading ? (

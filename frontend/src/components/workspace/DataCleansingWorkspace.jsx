@@ -1,403 +1,551 @@
 import { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
-
+import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
-
-import { ArrowLeft, Sparkles } from 'lucide-react';
+import { ArrowLeft, Sparkles, Play, Filter, Plus, Download, Undo, Redo, Trash2, Save, History, Settings } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../hooks/useAuth';
 import DataTable from '../../DataTable';
-import EquationBuilder from '../../EquationBuilder';
-import Filter from '../../Filter';
-import CustomRules from '../../CustomRules';
-import ThemeSwitcher from '../../ThemeSwitcher';
+// Sidebar removed; operations moved to toolbar above table
+import CustomRulesModal from './CustomRulesModal';
+import FilterModal from './FilterModal';
+import EquationBuilderModal from './EquationBuilderModal';
 import DownloadModal from '../../DownloadModal';
 import UniqueIdentifierModal from '../../UniqueIdentifierModal';
 import StatsModal from '../../StatsModal';
 import { filesAPI, formulasAPI } from '../../utils/api';
+import ThemeSwitcher from '../../ThemeSwitcher';
+import ConfirmationModal from './ConfirmationModal';
+import ChatButton from '../chat/ChatButton';
+import ChatWindow from '../chat/ChatWindow';
+import { GroupingModal } from './GroupingModal';
+import { AnomalyDetectionModal } from './AnomalyDetectionModal';
 
-const DataCleansingWorkspace = ({ fileId, onBack, projectName, cachedData, onDataLoaded }) => {
-  // State management (similar to original App.jsx)
+const DataCleansingWorkspace = ({ fileId, onBack, projectName, cachedData, onDataLoaded, projectId, fileName }) => {
   const [allColumns, setAllColumns] = useState([]);
-  const [, setError] = useState(null);
+  
   const [loading, setLoading] = useState(false);
-  const [isFileProcessing, setIsFileProcessing] = useState(false);
+  
   const [selectedColumn, setSelectedColumn] = useState('');
   const [selectedRuleType, setSelectedRuleType] = useState('');
   const [dateFormat, setDateFormat] = useState('');
   const [countryMapping, setCountryMapping] = useState('');
   const [originalData, setOriginalData] = useState([]);
+  const [selectedRowIds, setSelectedRowIds] = useState([]);
+  const [clearSelectionSignal, setClearSelectionSignal] = useState(0);
   const [theme, setTheme] = useState('light');
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
+  const isDemo = user?.provider === 'demo';
+  const [resolvedFileName, setResolvedFileName] = useState(fileName || '');
   const [originalDataTotalRows, setOriginalDataTotalRows] = useState(0);
   const [currentOriginalPage, setCurrentOriginalPage] = useState(1);
   const [itemsPerPage] = useState(50);
   const [savedFormulas, setSavedFormulas] = useState([]);
-  const [filterCriteria, setFilterCriteria] = useState(null);
+  const [filterCriteria] = useState(null);
   const [activeModal, setActiveModal] = useState(null);
-  const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const [modifications, setModifications] = useState([]);
   const [columnSearches, setColumnSearches] = useState({});
-  const [showProcessingComplete, setShowProcessingComplete] = useState(false);
-  const [completionTimeoutId, setCompletionTimeoutId] = useState(null);
+  
+  
+  const [showUndoConfirm, setShowUndoConfirm] = useState(false);
+  const [showRedoConfirm, setShowRedoConfirm] = useState(false);
+  const [showClearAllConfirm, setShowClearAllConfirm] = useState(false);
+  const [isGroupingModalOpen, setIsGroupingModalOpen] = useState(false);
+  const [isAnomalyModalOpen, setIsAnomalyModalOpen] = useState(false);
+
+  const applyAndSave = async (newMods) => {
+    if (!fileId) return;
+    setLoading(true);
+    // In auto-save mode, we commit changes immediately.
+    // We combine any existing pending modifications with the new ones.
+    const modsToSave = [...modifications, ...newMods];
+    
+    try {
+      await filesAPI.applyModifications(fileId, modsToSave);
+      setModifications([]); 
+      toast.success('Changes saved successfully!');
+      
+      // Refresh data to reflect the saved state
+      // Passing empty array because changes are now part of the base file
+      await handlePreview(currentOriginalPage, []); 
+    } catch (error) {
+      console.error("Auto-save failed:", error);
+      toast.error('Failed to save changes.');
+      // Revert to pending state if save fails
+      setModifications(modsToSave); 
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApplySpellingCorrection = (column, mapping) => {
+    const newModification = {
+      type: 'rule',
+      rule: {
+        column_name: column,
+        rule_type: 'correct_spelling',
+        payload: { mapping },
+      },
+    };
+    applyAndSave([newModification]);
+  };
 
   const loadFormulas = useCallback(async () => {
     try {
-      const data = await formulasAPI.getAll();
+      const data = await formulasAPI.getAll(projectId);
       setSavedFormulas(data);
     } catch {
       console.error('Error loading formulas:');
     }
-  }, []);
+  }, [projectId]);
+
+  const addRowIds = (rows, page) => {
+    const base = ((page - 1) * itemsPerPage);
+    return (rows || []).map((r, idx) => ({ ...r, _rowId: base + idx + 1 }));
+  };
 
   const loadFileData = useCallback(async () => {
     if (cachedData) {
-      setOriginalData(cachedData.originalData);
-      setOriginalDataTotalRows(cachedData.originalDataTotalRows);
-      setAllColumns(cachedData.allColumns);
-      setCurrentOriginalPage(1);
+      setOriginalData(addRowIds(cachedData.data, 1));
+      setAllColumns(cachedData.columns);
+      setOriginalDataTotalRows(cachedData.total_rows);
       return;
     }
 
+    if (!fileId) return;
+    setLoading(true);
     try {
-      setLoading(true);
-      setIsFileProcessing(true);
-      
-      // Load file content
-      const fileData = await filesAPI.getContent(fileId, 1, itemsPerPage);
-      const columnsData = await filesAPI.getUniqueColumns(fileId);
-
-      const dataToCache = {
-        originalData: fileData.data,
-        originalDataTotalRows: fileData.total_rows,
-        allColumns: columnsData.all_columns || [],
-      };
-
-      onDataLoaded(fileId, dataToCache);
-
-      setOriginalData(dataToCache.originalData);
-      setOriginalDataTotalRows(dataToCache.originalDataTotalRows);
-      setAllColumns(dataToCache.allColumns);
-      setCurrentOriginalPage(1);
-
-      // File processing completed successfully
-      setIsFileProcessing(false);
-      setShowProcessingComplete(true);
-      
-      // Clear any existing timeout
-      if (completionTimeoutId) {
-        clearTimeout(completionTimeoutId);
-      }
-      
-      // Hide the completion message after 2 seconds
-      const timeoutId = setTimeout(() => {
-        setShowProcessingComplete(false);
-        setCompletionTimeoutId(null);
-      }, 2000);
-      setCompletionTimeoutId(timeoutId);
+      const data = await filesAPI.getContent(fileId, currentOriginalPage, itemsPerPage);
+      setOriginalData(addRowIds(data.data, currentOriginalPage));
+      const columns = data.data.length > 0 ? Object.keys(data.data[0]) : [];
+      setAllColumns(columns);
+      setOriginalDataTotalRows(data.total_rows);
+      onDataLoaded(fileId, { data: data.data, columns: columns, total_rows: data.total_rows });
     } catch {
-      setError('Failed to load file data');
-      setIsFileProcessing(false);
+      toast.error('An unexpected error occurred while fetching data.');
     } finally {
       setLoading(false);
     }
-  }, [fileId, itemsPerPage, cachedData, onDataLoaded, completionTimeoutId]);
+  }, [fileId, currentOriginalPage, itemsPerPage, onDataLoaded, cachedData]);
 
   useEffect(() => {
-    // Load formulas and file data on component mount
     loadFormulas();
     loadFileData();
-  }, [fileId, loadFileData, loadFormulas]); // Add loadFileData to dependencies
+  }, [fileId, loadFileData, loadFormulas, projectId]);
 
   useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-
-    // Cleanup function to remove dark class on component unmount
-    return () => {
-      document.documentElement.classList.remove('dark');
-    };
-  }, [theme]);
-
-  // Cleanup timeout on component unmount
-  useEffect(() => {
-    return () => {
-      if (completionTimeoutId) {
-        clearTimeout(completionTimeoutId);
-      }
-    };
-  }, [completionTimeoutId]);
-
-  const toggleTheme = () => {
-    setTheme(theme === 'dark' ? 'light' : 'dark');
-  };
-
-  const handleApplyFilter = async (criteria) => {
-    const newModifications = [...modifications, { type: 'filter', criteria }];
-    setModifications(newModifications);
-    setFilterCriteria(criteria);
-    await handlePreview(1, newModifications);
-    toast.success('Filter applied!');
-  };
-
-  const handleClearModifications = async () => {
-    setModifications([]);
-    setFilterCriteria(null);
-    setColumnSearches({});
-    await handlePreview(1, []);
-    toast.success('All modifications cleared!');
-  };
-
-  const handleDownload = () => {
-    setIsDownloadModalOpen(true);
-  };
-
-  const handleDownloadFile = async (format) => {
-    if (!fileId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await filesAPI.downloadModified(fileId, modifications, format);
-      
-      // Determine filename from Content-Disposition or fallback
-      const disposition = response.headers.get('content-disposition') || '';
-      let filename = null;
-      const match = disposition.match(/filename="?([^"]+)"?/i);
-      if (match && match[1]) {
-        filename = match[1];
-      }
-      
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      if (!filename) {
-        filename = `cleaned_data_${fileId}.${format}`;
-      }
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch {
-      setError('An unexpected error occurred during download.');
-    } finally {
-      setLoading(false);
-    }
-  };
+    // keep file name updated if passed or can be inferred
+    if (fileName) setResolvedFileName(fileName);
+  }, [fileName]);
 
   const handlePreview = useCallback(async (page, mods) => {
+    console.log("Previewing modifications:", mods);
     if (!fileId) return;
     setLoading(true);
-    setError(null);
     try {
-      const data = await filesAPI.previewModifications(fileId, mods, page, itemsPerPage);
-      setOriginalData(data.data);
+      // Inject current column searches into preview if not present in mods
+      // This ensures the view maintains the search filter even after auto-save clears modifications
+      let finalMods = [...mods];
+      const hasSearchInMods = finalMods.some(m => m.type === 'column_search');
+      if (!hasSearchInMods && Object.values(columnSearches).some(s => s)) {
+        finalMods.push({ type: 'column_search', search: columnSearches });
+      }
+
+      const data = await filesAPI.previewModifications(fileId, finalMods, page, itemsPerPage);
+      setOriginalData(addRowIds(data.data, page));
       setOriginalDataTotalRows(data.total_rows);
       setCurrentOriginalPage(page);
     } catch {
-      setError('An unexpected error occurred while fetching data.');
+      toast.error('An unexpected error occurred while fetching data.');
     } finally {
       setLoading(false);
     }
-  }, [fileId, itemsPerPage]);
+  }, [fileId, itemsPerPage, columnSearches]);
 
-  const handleApplyRule = async () => {
-    if (!fileId || !selectedColumn || !selectedRuleType) return;
+  const handleDataRefresh = (action) => {
+    if (action === 'save') {
+      // In auto-save mode, there shouldn't be pending changes to save manually,
+      // but if there are, we save them.
+      if (modifications.length > 0) {
+        applyAndSave([]);
+      }
+    } else if (action === 'clear') {
+      confirmClearAll();
+    } else {
+      handlePreview(currentOriginalPage, modifications);
+    }
+  };
 
-    let payload = {};
+  const handleApplyRule = (page) => {
+    if (!selectedColumn) {
+      toast.error('Please select a column.');
+      return;
+    }
+    if (!selectedRuleType) {
+      toast.error('Please select a rule type.');
+      return;
+    }
+
+    let payload;
     if (selectedRuleType === 'correct_date') {
-      payload = { target_format: dateFormat || '%Y-%m-%d' };
+      payload = { target_format: dateFormat };
     } else if (selectedRuleType === 'correct_country') {
       try {
-        payload = { mapping: countryMapping ? JSON.parse(countryMapping) : null };
+        payload = { mapping: JSON.parse(countryMapping) };
       } catch {
-        setError('Invalid JSON for country mapping.');
+        toast.error('Invalid JSON for country mapping.');
+        return;
+      }
+    } else if (selectedRuleType === 'correct_spelling') {
+      try {
+        payload = { mapping: JSON.parse(countryMapping) };
+      } catch {
+        toast.error('Invalid JSON for spelling mapping.');
         return;
       }
     }
 
-    const rule = {
-      column_name: selectedColumn,
-      rule_type: selectedRuleType,
-      payload: payload,
-      active: true,
+    const newModification = {
+      type: 'rule',
+      rule: {
+        column_name: selectedColumn,
+        rule_type: selectedRuleType,
+        payload: payload,
+      },
     };
-
-    const newModifications = [...modifications, { type: 'rule', rule }];
-    setModifications(newModifications);
-    await handlePreview(1, newModifications);
-    toast.success('Rule applied!');
+    applyAndSave([newModification]);
+    setActiveModal(null);
   };
 
-  const handleApplyFormula = async (formulaName, formulaExpression) => {
-    if (!fileId) return;
-
-    const formula = {
-      formula_name: formulaName,
-      formula_expression: formulaExpression,
-    };
-
-    const newModifications = [...modifications, { type: 'formula', formula }];
-    setModifications(newModifications);
-    await handlePreview(1, newModifications);
-
-    // Fetch updated columns after formula application
-    try {
-      const colsData = await filesAPI.getUniqueColumns(fileId);
-      setAllColumns(colsData.all_columns || []);
-    } catch {
-      // Handle error silently
+  const handleApplyFilter = (criteria) => {
+    if (!criteria) {
+      toast.error('Please provide filter criteria.');
+      return;
     }
-
-    toast.success('Formula applied!');
+    const newModification = { type: 'filter', criteria };
+    applyAndSave([newModification]);
+    setActiveModal(null);
   };
 
-  const handleCellChange = useCallback(async (rowIndex, columnKey, oldValue, newValue, applyToAll) => {
-    const newModifications = [...modifications, { 
-      type: 'cell_edit', 
-      edit: { rowIndex, columnKey, oldValue, newValue, applyToAll } 
-    }];
-    setModifications(newModifications);
-    await handlePreview(currentOriginalPage, newModifications);
-  }, [modifications, currentOriginalPage, handlePreview]);
+  const handleApplyFormula = (name, expression) => {
+    if (!name) {
+      toast.error('Please provide a formula name.');
+      return;
+    }
+    if (!expression) {
+      toast.error('Please provide a formula expression.');
+      return;
+    }
+    const newModification = {
+      type: 'formula',
+      formula: { formula_name: name, formula_expression: expression },
+    };
+    applyAndSave([newModification]);
+    setActiveModal(null);
+  };
 
-  const handleColumnSearch = useCallback(async (searches) => {
+  const handleDownload = async (format) => {
+    if (!fileId) return;
+    try {
+      const response = await filesAPI.downloadModified(fileId, modifications, format);
+      const blob = response.data;
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cleaned_data.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      toast.success('File downloaded successfully!');
+    } catch {
+      toast.error('Failed to download file.');
+    }
+    setIsDownloadModalOpen(false);
+  };
+
+  const handleUndo = () => {
+    setShowUndoConfirm(true);
+  };
+
+  const confirmUndo = async () => {
+    setShowUndoConfirm(false);
+    if (!fileId) return;
+    setLoading(true);
+    try {
+      await filesAPI.undo(fileId);
+      setModifications([]); // Clear local modifications
+      toast.success('Last saved operation undone.');
+      // Refresh data to reflect the undone state with correct row IDs
+      await handlePreview(currentOriginalPage, []);
+    } catch (error) {
+      toast.error('Failed to undo the last operation.');
+      console.error("Failed to undo:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRedo = () => {
+    setShowRedoConfirm(true);
+  };
+
+  const confirmRedo = async () => {
+    setShowRedoConfirm(false);
+    if (!fileId) return;
+    setLoading(true);
+    try {
+      await filesAPI.redo(fileId);
+      setModifications([]); // Clear local modifications
+      toast.success('Last undone operation redone.');
+      // Refresh data to reflect the redone state with correct row IDs
+      await handlePreview(currentOriginalPage, []);
+    } catch (error) {
+      toast.error('Failed to redo the last operation.');
+      console.error("Failed to redo:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClearAll = () => {
+    // Allow resetting the file at any time
+    setShowClearAllConfirm(true);
+  };
+
+  const confirmClearAll = async () => {
+    setShowClearAllConfirm(false);
+    if (!fileId) return;
+    setLoading(true);
+    try {
+      await filesAPI.reset(fileId);
+      setModifications([]);
+      setColumnSearches({}); // Clear column searches
+      await handlePreview(1, []);
+      toast.success('All modifications cleared (file reset to original).');
+    } catch (error) {
+      console.error("Failed to reset file:", error);
+      toast.error('Failed to clear modifications.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleColumnSearch = useCallback((searches) => {
     setColumnSearches(searches);
-    setModifications(prevModifications => {
-        const searchModifications = Object.entries(searches)
-            .filter(([, searchTerm]) => searchTerm)
-            .map(([column, searchTerm]) => ({ type: 'column_search', search: { column, searchTerm } }));
-
-        const otherModifications = prevModifications.filter(m => m.type !== 'column_search');
-        const newModifications = [...otherModifications, ...searchModifications];
-        
+    // For auto-save, we need to decide if search is saved.
+    // Assuming yes based on "save after each operation".
+    // We construct the modification and save it.
+    
+    // Check if we already have a column_search in modifications
+    // In auto-save, modifications is usually empty.
+    
+    if (Object.values(searches).some(s => s)) {
+      const newMod = { type: 'column_search', search: searches };
+      // We pass it to applyAndSave. Note that applyAndSave appends.
+      // If we had pending mods, we'd need to replace the old column_search.
+      // But assuming modifications is empty, we just save this one.
+      
+      // Wait, applyAndSave appends. If we type 'a', then 'ab', we get two search mods?
+      // That would stack filters. "Search A" then "Search AB" (which yields empty if A excluded B).
+      // Search is usually "Replace current search".
+      // But the backend `applyModifications` API likely treats it as a step in the pipeline.
+      // If we want to "Update" the search, we might need to Undo the last search?
+      // This is complicated for auto-save.
+      // Let's implement it as: Only save if user explicitly "applies" via Enter?
+      // But this callback comes from DataTable, usually on change.
+      
+      // ALTERNATIVE: Don't auto-save Search. Keep it local.
+      // But user removed Save button.
+      // If we keep it local, refreshing loses it.
+      // User said "refresh... operation should save".
+      // So we MUST save.
+      
+      // To prevent stacking, we rely on the fact that usually people clear search before new search?
+      // No.
+      // If I type 'a', I save. Pipeline: [Search 'a'].
+      // I type 'b' (now 'ab'). I save. Pipeline: [Search 'a', Search 'ab'].
+      // Result: Empty.
+      // This is BAD.
+      
+      // Fix: We can't auto-save cumulative search steps easily without "Undo" previous search step.
+      // Or, the backend needs to support "Upsert" of a step type.
+      // Since I can't change backend logic easily right now without risking regression.
+      // I will implement Search as "Preview Only" (Local) for now.
+      // It will NOT persist on refresh.
+      // This is the safest bet for Search functionality.
+      // I will add a comment.
+      
+      setModifications(prev => {
+        // We update local state only for search.
+        const newModifications = prev.filter(mod => mod.type !== 'column_search');
+        newModifications.push({ type: 'column_search', search: searches });
         handlePreview(1, newModifications);
         return newModifications;
-    });
-  }, [handlePreview]);
+      });
+      
+    } else {
+       // Search cleared
+       setModifications(prev => {
+         const newModifications = prev.filter(mod => mod.type !== 'column_search');
+         handlePreview(1, newModifications);
+         return newModifications;
+       });
+    }
+  }, [handlePreview, setColumnSearches]);
 
-  const handleRemoveDuplicates = (selectedColumns) => {
-    if (!selectedColumns || selectedColumns.length === 0) return;
-    // Remove duplicates from originalData
-    const seen = new Set();
-    const filtered = originalData.filter(row => {
-      const key = selectedColumns.map(col => row[col]).join('||');
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    setOriginalData(filtered);
+  const handleCellChange = (rowIndex, columnKey, oldValue, newValue, applyToAll) => {
+    const newModification = {
+      type: 'cell_edit',
+      edit: {
+        rowIndex,
+        columnKey,
+        oldValue,
+        newValue,
+        applyToAll,
+      },
+    };
+    applyAndSave([newModification]);
   };
 
-  const isDark = theme === 'dark';
+  const handleSuggestion = (suggestion, accept) => {
+    if (accept) {
+      if (suggestion.type === 'filter') {
+        const { column, operator, value } = suggestion.criteria;
+
+        // Check if the filter can be translated into a column search
+        if (operator === 'is' || operator === 'contains' || operator === 'starts_with' || operator === 'ends_with') {
+          const newColumnSearches = { ...columnSearches, [column]: value };
+          setColumnSearches(newColumnSearches); // Update the state for manual search inputs
+          // Call handleColumnSearch to apply this as a column_search modification
+          handleColumnSearch(newColumnSearches);
+          toast.success(`Column search applied for ${column}: ${value}`);
+        } else {
+          // For other operators, apply as a generic filter
+          // Use our new auto-save logic via handleApplyFilter logic (replicated)
+          const newModification = { type: 'filter', criteria: suggestion.criteria };
+          applyAndSave([newModification]);
+          toast.success('Filter applied successfully!');
+        }
+      } else {
+        // Existing logic for other types of suggestions
+        let newModifications;
+        if (Array.isArray(suggestion)) {
+          newModifications = suggestion;
+        } else {
+          newModifications = [suggestion];
+        }
+        applyAndSave(newModifications);
+      }
+    } else {
+      toast.error('Suggestion rejected.');
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+    <div className="min-h-screen bg-background text-text-primary">
+      <header className="bg-black text-white shadow-sm sticky top-0 z-10">
+        <div className="px-3 sm:px-4 py-2">
           <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={onBack}
-                className="mr-4 p-2 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <ArrowLeft className="w-5 h-5 text-gray-600" />
-              </motion.button>
-              
-              <div className="flex items-center">
-                <Sparkles className="w-8 h-8 text-indigo-600 mr-3" />
-                <div>
-                  <h1 className="text-2xl font-bold text-gray-900">Data Cleansing</h1>
-                  <p className="text-sm text-gray-600">
-                    Project: {projectName}
-                  </p>
-                </div>
-              </div>
+            <div className="flex items-center gap-3">
+              {!isDemo && (
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={onBack}
+                  className="p-2 rounded-lg hover:bg-gray-800 transition-colors"
+                  aria-label="Back to Project"
+                >
+                  <ArrowLeft className="w-5 h-5 text-white" />
+                </motion.button>
+              )}
+              <Sparkles className="w-5 h-5 text-white" />
+              <span className="text-sm sm:text-base font-normal tracking-tight">Agentic AI Data Wrangler</span>
             </div>
-            
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={handleClearModifications}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                Clear All
-              </button>
-              <button
-                onClick={() => handlePreview(1, modifications)}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-              >
-                Refresh
-              </button>
-              <button
-                onClick={handleDownload}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-              >
-                Download
-              </button>
-              <ThemeSwitcher theme={theme} toggleTheme={toggleTheme} />
+            <div className="flex items-center gap-3">
+              {!isDemo && (
+                <>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => navigate(`/projects/${projectId}/history`)}
+                    className="p-2 rounded-full bg-white text-black hover:bg-gray-100"
+                    title="View History"
+                    aria-label="View History"
+                  >
+                    <History className="w-4 h-4" />
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => navigate(`/projects/${projectId}/config`)}
+                    className="p-2 rounded-full bg-white text-black hover:bg-gray-100"
+                    title="Configuration"
+                    aria-label="Configuration"
+                  >
+                    <Settings className="w-4 h-4" />
+                  </motion.button>
+                </>
+              )}
+              {(() => {
+                const getInitials = (fullName) => {
+                  if (!fullName || typeof fullName !== 'string') return 'AA';
+                  const parts = fullName.trim().split(/\s+/);
+                  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+                  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+                };
+                const initials = getInitials(user?.name || user?.email || 'User');
+                return (
+                  <button
+                    title={user?.name || 'Profile'}
+                    onClick={logout}
+                    className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gray-500 text-white flex items-center justify-center hover:bg-gray-700 focus:outline-none"
+                  >
+                    <span className="text-xs sm:text-sm font-medium tracking-tight">{initials}</span>
+                  </button>
+                );
+              })()}
             </div>
           </div>
         </div>
       </header>
 
-      {/* Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Action Buttons */}
-        <div className="mb-6">
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={() => setActiveModal('filter')}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Add Filter
+      <div className="px-3 sm:px-4 py-4">
+        {/* Toolbar above table with file title (left) and operations (right) */}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-800">{resolvedFileName || 'Workspace File'}</h2>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button title="Apply Rule" aria-label="Apply Rule" onClick={() => setActiveModal('customRules')} className="p-2 rounded-full bg-black text-white hover:bg-gray-900">
+              <Play className="w-4 h-4" />
             </button>
-            <button
-              onClick={() => setActiveModal('equation')}
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-            >
-              Add Formula
+            <button title="Apply Filter" aria-label="Apply Filter" onClick={() => setActiveModal('filter')} className="p-2 rounded-full bg-black text-white hover:bg-gray-900">
+              <Filter className="w-4 h-4" />
             </button>
-            <button
-              onClick={() => setActiveModal('rules')}
-              className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
-            >
-              Apply Rules
+            <button title="Apply Formula" aria-label="Apply Formula" onClick={() => setActiveModal('equationBuilder')} className="p-2 rounded-full bg-black text-white hover:bg-gray-900">
+              <Plus className="w-4 h-4" />
             </button>
-            <button
-              onClick={() => setActiveModal('uniqueIdentifier')}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-            >
-              Remove Duplicates
+            <button title="AI Spelling Correction" aria-label="AI Spelling Correction" onClick={() => setIsGroupingModalOpen(true)} className="p-2 rounded-full bg-black text-white hover:bg-gray-900">
+              <Sparkles className="w-4 h-4" />
             </button>
-            {/* <button
-              onClick={() => setIsStatsModalOpen(true)}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-            >
-              View Stats
-            </button> */}
+            {!isDemo && (
+              <button title="Download" aria-label="Download" onClick={() => setIsDownloadModalOpen(true)} className="p-2 rounded-full bg-black text-white hover:bg-gray-900">
+                <Download className="w-4 h-4" />
+              </button>
+            )}
+            <button title="Undo" aria-label="Undo" onClick={handleUndo} className="p-2 rounded-full bg-black text-white hover:bg-gray-900">
+              <Undo className="w-4 h-4" />
+            </button>
+            <button title="Redo" aria-label="Redo" onClick={handleRedo} className="p-2 rounded-full bg-black text-white hover:bg-gray-900">
+              <Redo className="w-4 h-4" />
+            </button>
+            <button title="Clear All" aria-label="Clear All" onClick={handleClearAll} className="p-2 rounded-full bg-black text-white hover:bg-gray-900">
+              <Trash2 className="w-4 h-4" />
+            </button>
           </div>
         </div>
-
-        {/* Processing Status */}
-        {isFileProcessing && (
-          <div className="p-4 mb-4 text-sm text-blue-700 bg-blue-100 rounded-lg" role="alert">
-            <span className="font-medium">Processing file...</span> Please wait while the full file is being processed in the background.
-          </div>
-        )}
-        
-        {showProcessingComplete && !isFileProcessing && (
-          <div className="p-4 mb-4 text-sm text-green-700 bg-green-100 rounded-lg" role="alert">
-            <span className="font-medium">Processing complete!</span>
-          </div>
-        )}
-
-        {/* Data Table */}
-        <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div className="bg-card-background rounded-lg shadow overflow-hidden">
           <DataTable
             data={originalData}
             theme={theme}
@@ -412,92 +560,115 @@ const DataCleansingWorkspace = ({ fileId, onBack, projectName, cachedData, onDat
             fullHeight={false}
             fileId={fileId}
             allColumns={allColumns}
+            showTitle={false}
+            enableStats={false}
+            compact={true}
+            enableSelection={true}
+            selectionKey={'_rowId'}
+            onSelectionChange={(ids) => setSelectedRowIds(ids)}
+            clearSelectionSignal={clearSelectionSignal}
+            onClearSelection={() => { setSelectedRowIds([]); setClearSelectionSignal(s => s + 1); }}
           />
         </div>
       </div>
 
-      {/* Modals */}
-      {activeModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 overflow-y-auto h-full w-full flex items-center justify-center z-50 backdrop-blur-sm">
-          <div className={`p-8 w-1/2 max-w-2xl shadow-2xl rounded-xl transition-all ${isDark ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'}`}>
-            {activeModal === 'filter' && (
-              <Filter
-                columns={allColumns}
-                onApplyFilter={(criteria) => {
-                  handleApplyFilter(criteria);
-                  setActiveModal(null);
-                }}
-                fileId={fileId}
-                loading={loading}
-              />
-            )}
-            {activeModal === 'equation' && (
-              <EquationBuilder
-                columns={allColumns}
-                onApplyFormula={(...args) => {
-                  handleApplyFormula(...args);
-                  setActiveModal(null);
-                }}
-                fileId={fileId}
-                loading={loading}
-                savedFormulas={savedFormulas}
-              />
-            )}
-            {activeModal === 'rules' && (
-              <CustomRules
-                allColumns={allColumns}
-                selectedColumn={selectedColumn}
-                setSelectedColumn={setSelectedColumn}
-                selectedRuleType={selectedRuleType}
-                setSelectedRuleType={setSelectedRuleType}
-                dateFormat={dateFormat}
-                setDateFormat={setDateFormat}
-                countryMapping={countryMapping}
-                setCountryMapping={setCountryMapping}
-                handleApplyRule={() => {
-                  handleApplyRule();
-                  setActiveModal(null);
-                }}
-                fileId={fileId}
-                loading={loading}
-              />
-            )}
-            {activeModal === 'uniqueIdentifier' && (
-              <UniqueIdentifierModal
-                isOpen={activeModal === 'uniqueIdentifier'}
-                onClose={() => setActiveModal(null)}
-                columns={allColumns}
-                data={originalData}
-                onRemoveDuplicates={handleRemoveDuplicates}
-              />
-            )}
-            <div className="flex justify-end mt-6">
-              <button 
-                onClick={() => setActiveModal(null)} 
-                className={`px-6 py-2 rounded-lg font-medium transition-colors ${isDark ? 'bg-gray-700 text-gray-200 hover:bg-gray-600 border border-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'}`}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CustomRulesModal
+        isOpen={activeModal === 'customRules'}
+        onClose={() => setActiveModal(null)}
+        allColumns={allColumns}
+        selectedColumn={selectedColumn}
+        setSelectedColumn={setSelectedColumn}
+        selectedRuleType={selectedRuleType}
+        setSelectedRuleType={setSelectedRuleType}
+        dateFormat={dateFormat}
+        setDateFormat={setDateFormat}
+        countryMapping={countryMapping}
+        setCountryMapping={setCountryMapping}
+        handleApplyRule={handleApplyRule}
+        fileId={fileId}
+        loading={loading}
+      />
+
+      <FilterModal
+        isOpen={activeModal === 'filter'}
+        onClose={() => setActiveModal(null)}
+        columns={allColumns}
+        onApplyFilter={handleApplyFilter}
+        fileId={fileId}
+        loading={loading}
+      />
+
+      <EquationBuilderModal
+        isOpen={activeModal === 'equationBuilder'}
+        onClose={() => setActiveModal(null)}
+        columns={allColumns}
+        onApplyFormula={handleApplyFormula}
+        fileId={fileId}
+        loading={loading}
+        savedFormulas={savedFormulas}
+        projectId={projectId}
+      />
 
       <DownloadModal
         isOpen={isDownloadModalOpen}
         onClose={() => setIsDownloadModalOpen(false)}
-        onDownload={handleDownloadFile}
+        onDownload={handleDownload}
+      />
+
+      <ConfirmationModal
+        isOpen={showUndoConfirm}
+        onClose={() => setShowUndoConfirm(false)}
+        onConfirm={confirmUndo}
+        message="Are you sure you want to undo the last operation?"
+      />
+
+      <ConfirmationModal
+        isOpen={showRedoConfirm}
+        onClose={() => setShowRedoConfirm(false)}
+        onConfirm={confirmRedo}
+        message="Are you sure you want to redo the last undone operation?"
+      />
+
+      <ConfirmationModal
+        isOpen={showClearAllConfirm}
+        onClose={() => setShowClearAllConfirm(false)}
+        onConfirm={confirmClearAll}
+        message="Are you sure you want to clear all modifications? This cannot be undone."
+      />
+
+      <ChatButton onClick={() => setIsChatOpen(!isChatOpen)} />
+      {isChatOpen && fileId && (
+        <ChatWindow
+          isOpen={isChatOpen}
+          onClose={() => setIsChatOpen(false)}
+          onCleansingDone={handleDataRefresh}
+          onSuggestion={handleSuggestion}
+          onDownload={handleDownload}
+          allColumns={allColumns}
+          projectId={projectId}
+          fileId={fileId}
+        />
+      )}
+
+      <GroupingModal
+        isOpen={isGroupingModalOpen}
+        onClose={() => setIsGroupingModalOpen(false)}
+        fileId={fileId}
+        allColumns={allColumns}
+        onApply={handleApplySpellingCorrection}
+        loading={loading}
         theme={theme}
       />
 
-      {isStatsModalOpen && (
-        <StatsModal
-          fileId={fileId}
-          columns={allColumns}
-          theme={theme}
-          onClose={() => setIsStatsModalOpen(false)}
-        />
-      )}
+      <AnomalyDetectionModal
+        isOpen={isAnomalyModalOpen}
+        onClose={() => setIsAnomalyModalOpen(false)}
+        fileId={fileId}
+        allColumns={allColumns}
+        onApply={() => {}}
+        loading={loading}
+        theme={theme}
+      />
     </div>
   );
 };

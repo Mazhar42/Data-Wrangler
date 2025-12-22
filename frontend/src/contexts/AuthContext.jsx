@@ -1,4 +1,4 @@
-import { useReducer, useEffect } from 'react';
+import { useReducer, useEffect, useCallback } from 'react';
 import { authAPI } from '../utils/api';
 import { AuthContext } from './auth';
 
@@ -7,20 +7,20 @@ const authReducer = (state, action) => {
     case 'SET_LOADING':
       return { ...state, loading: action.payload };
     case 'SET_USER':
-      return { 
-        ...state, 
-        user: action.payload, 
-        isAuthenticated: !!action.payload, 
-        loading: false 
+      return {
+        ...state,
+        user: action.payload,
+        isAuthenticated: !!action.payload,
+        loading: false
       };
     case 'SET_TOKEN':
       return { ...state, token: action.payload };
-    
+
     case 'LOGOUT':
-      return { 
-        user: null, 
-        token: null, 
-        isAuthenticated: false, 
+      return {
+        user: null,
+        token: null,
+        isAuthenticated: false,
         loading: false
       };
     default:
@@ -63,111 +63,102 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   // Email/Password authentication
-  const register = async (userData) => {
+  const register = useCallback(async (userData) => {
     dispatch({ type: 'SET_LOADING', payload: true });
     try {
       const response = await authAPI.register(userData);
       const { access_token, user } = response;
-      
+
       localStorage.setItem('token', access_token);
       dispatch({ type: 'SET_TOKEN', payload: access_token });
       dispatch({ type: 'SET_USER', payload: user });
-      
+
       return response;
     } catch (error) {
       dispatch({ type: 'SET_LOADING', payload: false });
       throw error;
     }
-  };
+  }, []);
 
-  const loginWithPassword = async (credentials) => {
+  const loginWithPassword = useCallback(async (credentials) => {
     dispatch({ type: 'SET_LOADING', payload: true });
     try {
       const response = await authAPI.login(credentials);
       const { access_token, user } = response;
-      
+
       localStorage.setItem('token', access_token);
       dispatch({ type: 'SET_TOKEN', payload: access_token });
       dispatch({ type: 'SET_USER', payload: user });
-      
+
       return response;
     } catch (error) {
       dispatch({ type: 'SET_LOADING', payload: false });
       throw error;
     }
-  };
+  }, []);
 
-  // Microsoft OAuth
-  const loginWithMicrosoft = async (code) => {
+  // Demo Login
+  const loginAsDemo = useCallback(async () => {
     dispatch({ type: 'SET_LOADING', payload: true });
     try {
-      const response = await authAPI.microsoftCallback(code);
+      const response = await authAPI.demoLogin();
       const { access_token, user } = response;
-      
+
       localStorage.setItem('token', access_token);
       dispatch({ type: 'SET_TOKEN', payload: access_token });
       dispatch({ type: 'SET_USER', payload: user });
-      
+
       return response;
     } catch (error) {
       dispatch({ type: 'SET_LOADING', payload: false });
       throw error;
     }
-  };
-
-  const getMicrosoftAuthUrl = async () => {
-    const response = await authAPI.getMicrosoftAuthUrl();
-    return response.auth_url;
-  };
+  }, []);
 
   // Google OAuth
-  const loginWithGoogle = async (code) => {
+  const loginWithGoogle = useCallback(async (code) => {
     dispatch({ type: 'SET_LOADING', payload: true });
     try {
       const response = await authAPI.googleCallback(code);
       const { access_token, user } = response;
-      
+
       localStorage.setItem('token', access_token);
       dispatch({ type: 'SET_TOKEN', payload: access_token });
       dispatch({ type: 'SET_USER', payload: user });
-      
+
       return response;
     } catch (error) {
       dispatch({ type: 'SET_LOADING', payload: false });
       throw error;
     }
-  };
+  }, []);
 
-  const getGoogleAuthUrl = async () => {
+  const getGoogleAuthUrl = useCallback(async () => {
     const response = await authAPI.getGoogleAuthUrl();
     return response.auth_url;
-  };
+  }, []);
 
   // Common
-  const logout = () => {
+  const logout = useCallback(async () => {
+    await authAPI.logout();
     localStorage.removeItem('token');
     dispatch({ type: 'LOGOUT' });
-  };
-
-  // Legacy support - keep the old login method for backward compatibility
-  const login = loginWithMicrosoft;
+  }, []);
 
   const value = {
     ...state,
     // Email/Password
     register,
     loginWithPassword,
-    
-    // Microsoft OAuth
-    loginWithMicrosoft,
-    getMicrosoftAuthUrl,
-    
+
+    // Demo Login
+    loginAsDemo,
+
     // Google OAuth
     loginWithGoogle,
     getGoogleAuthUrl,
-    
+
     // Common
-    login, // Legacy support
     logout,
   };
 
@@ -177,5 +168,3 @@ export const AuthProvider = ({ children }) => {
     </AuthContext.Provider>
   );
 };
-
-

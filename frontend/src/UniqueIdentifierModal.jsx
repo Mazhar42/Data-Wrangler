@@ -45,15 +45,15 @@ const UniqueIdentifierModal = ({ isOpen, onClose, columns, data, onRemoveDuplica
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-lg w-96">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray bg-opacity-40 backdrop-blur-sm">
+      <div className="bg-white p-8 rounded-lg shadow-lg w-96">
         <h2 className="text-2xl font-bold mb-4">Unique Identifier</h2>
         <p className="mb-4">Select columns that together form a unique identifier (primary key).</p>
         <div className="flex flex-wrap gap-2 mb-4">
           {columns.map(col => (
             <button
               key={col}
-              className={`px-3 py-1 rounded border ${selectedColumns.includes(col) ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'}`}
+              className={`px-3 py-1 rounded border ${selectedColumns.includes(col) ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
               onClick={() => handleSelect(col)}
             >
               {col}

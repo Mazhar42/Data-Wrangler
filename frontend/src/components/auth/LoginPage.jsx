@@ -1,40 +1,41 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 
 
-import { LogIn, Sparkles, Database, TrendingUp, Shield } from 'lucide-react';
+import { LogIn, Sparkles, Database, TrendingUp, Shield, Play } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import LoginForm from './LoginForm';
 import RegisterForm from './RegisterForm';
 import GoogleSignInButton from './GoogleSignInButton';
 
 const LoginPage = () => {
-  const { getMicrosoftAuthUrl, loading } = useAuth();
-  const [authUrl, setAuthUrl] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const { loading, loginAsDemo } = useAuth();
   const [showRegister, setShowRegister] = useState(false);
-
-  useEffect(() => {
-    const fetchAuthUrl = async () => {
-      try {
-        const url = await getMicrosoftAuthUrl();
-        setAuthUrl(url);
-      } catch (error) {
-        console.error('Failed to get auth URL:', error);
-      }
-    };
-    fetchAuthUrl();
-  }, [getMicrosoftAuthUrl]);
-
-  const handleMicrosoftLogin = () => {
-    setIsLoading(true);
-    window.location.href = authUrl;
-  };
+  const navigate = useNavigate();
 
   const handleAuthSuccess = () => {
     // The auth context will handle redirecting to the dashboard
     // This is just for any additional success handling if needed
     console.log('Authentication successful');
+  };
+
+  const handleDemoLogin = async () => {
+    try {
+      await loginAsDemo();
+      
+      // Fetch projects to find the demo project
+      const { projectsAPI } = await import('../../utils/api');
+      const projects = await projectsAPI.getAll();
+      if (projects && projects.length > 0) {
+        navigate(`/projects/${projects[0].id}`);
+      } else {
+        // Fallback if no project found (should not happen based on backend)
+        navigate('/dashboard');
+      }
+    } catch (error) {
+      console.error("Demo login failed", error);
+    }
   };
 
   const toggleForm = () => {
@@ -55,14 +56,14 @@ const LoginPage = () => {
     {
       icon: Shield,
       title: "Secure & Private",
-      description: "Your data is protected with Microsoft authentication and enterprise-grade security"
+      description: "Your data is protected with enterprise-grade security"
     }
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 flex">
-      {/* Left Side - Features */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-indigo-600 via-purple-600 to-blue-700 p-12 text-white relative overflow-hidden">
+    <div className="h-screen flex bg-white">
+      {/* Right Side - Brand & Info (Dark panel) */}
+      <div className="hidden lg:flex lg:w-2/5 h-full bg-neutral-900 p-10 text-white relative overflow-hidden">
         {/* Background decorative elements */}
         <div className="absolute inset-0 opacity-10">
           <motion.div 
@@ -91,32 +92,32 @@ const LoginPage = () => {
           />
         </div>
         
-        <div className="relative z-10 flex flex-col justify-center max-w-lg">
+        <div className="relative z-10 flex flex-col justify-center max-w-lg h-full">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8 }}
           >
-            <div className="flex items-center mb-8">
+            <div className="flex items-center mb-6">
               <Sparkles className="w-8 h-8 mr-3" />
-              <h1 className="text-3xl font-bold">Data Cleansing Pro</h1>
+              <h1 className="text-3xl font-thin tracking-tighter">Agentic AI Data Wrangler</h1>
             </div>
             
-            <h2 className="text-4xl font-bold mb-6 leading-tight">
+            <h2 className="text-base font-normal mb-4 leading-tight">
               Transform Your Data with 
               <span className="block text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-pink-300">
                 Intelligent Processing
               </span>
             </h2>
             
-            <p className="text-lg text-indigo-100 mb-12 leading-relaxed">
+            <p className="text-sm text-indigo-100 mb-8 leading-relaxed max-w-md">
               Streamline your data workflow with our powerful cleansing tools. 
               Create projects, upload files, and apply sophisticated transformations 
               with an intuitive interface designed for professionals.
             </p>
           </motion.div>
 
-          <div className="space-y-8">
+          <div className="space-y-5">
             {features.map((feature, index) => (
               <motion.div
                 key={feature.title}
@@ -129,35 +130,29 @@ const LoginPage = () => {
                   <feature.icon className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-lg mb-2">{feature.title}</h3>
+                  <h3 className="font-normal text-lg mb-2">{feature.title}</h3>
                   <p className="text-indigo-100 text-sm leading-relaxed">{feature.description}</p>
                 </div>
               </motion.div>
             ))}
           </div>
         </div>
+
+        {/* Footer */}
+        <div className="absolute bottom-6 left-10 z-20 text-indigo-100 text-xs">
+          © 2025 <span className="font-semibold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-pink-300">Ark Software Solutions Ltd.</span> All rights reserved
+        </div>
       </div>
 
-      {/* Right Side - Authentication */}
-      <div className="flex-1 flex items-center justify-center p-8">
+      {/* Left Side - Authentication (Pure white) */}
+      <div className="w-full lg:w-3/5 flex items-center justify-center p-10 bg-white">
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5 }}
-          className="w-full max-w-md"
+          className="w-full max-w-xl"
         >
-          <div className="bg-white rounded-2xl shadow-2xl p-8 border border-gray-100">
-            {/* Header */}
-            <div className="text-center mb-8">
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ duration: 0.5, delay: 0.2 }}
-                className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-6"
-              >
-                <Database className="w-8 h-8 text-white" />
-              </motion.div>
-            </div>
+          <div className="h-full">
 
             {/* Authentication Forms */}
             {showRegister ? (
@@ -185,75 +180,41 @@ const LoginPage = () => {
             </div>
 
             {/* OAuth Buttons */}
-            <div className="space-y-3">
+            <div className="flex flex-col items-center justify-center gap-3">
               <GoogleSignInButton disabled={loading} />
               
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={handleMicrosoftLogin}
-                disabled={!authUrl || isLoading || loading}
-                className="w-full bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 font-medium py-3 px-6 rounded-lg transition-all duration-300 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center group"
-              >
-                {isLoading ? (
-                  <div className="flex items-center">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-700 mr-3"></div>
-                    Connecting...
-                  </div>
-                ) : (
-                  <div className="flex items-center">
-                    <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
-                      <path fill="#f25022" d="M1 1h10v10H1z"/>
-                      <path fill="#00a4ef" d="M12 1h10v10H12z"/>
-                      <path fill="#7fba00" d="M1 12h10v10H1z"/>
-                      <path fill="#ffb900" d="M12 12h10v10H12z"/>
-                    </svg>
-                    <span className="group-hover:translate-x-1 transition-transform">
-                      Continue with Microsoft
-                    </span>
-                  </div>
-                )}
-              </motion.button>
+              <div className="w-full max-w-sm mt-4">
+                  <button
+                    onClick={handleDemoLogin}
+                    disabled={loading}
+                    className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all duration-200 shadow-md hover:shadow-lg group"
+                  >
+                    <div className="p-1 bg-white/20 rounded-full">
+                      <Play className="w-4 h-4 fill-current" />
+                    </div>
+                    <div className="flex flex-col items-start">
+                      <span className="text-sm font-semibold">Try Demo Mode</span>
+                      <span className="text-xs text-indigo-100">No account required • Limited features</span>
+                    </div>
+                  </button>
+              </div>
             </div>
 
             {/* Trust indicators */}
-            <div className="mt-8 border-t pt-6">
-              <div className="flex items-center justify-center space-x-8 text-gray-400">
+            <div className="hidden md:block mt-8 text-gray-400 text-xs">
+              <div className="flex items-center justify-start space-x-6">
                 <div className="flex items-center">
                   <Shield className="w-4 h-4 mr-2" />
-                  <span className="text-xs">Enterprise Security</span>
+                  <span>Enterprise Security</span>
                 </div>
                 <div className="flex items-center">
                   <Sparkles className="w-4 h-4 mr-2" />
-                  <span className="text-xs">AI-Powered</span>
+                  <span>AI-Powered</span>
                 </div>
               </div>
             </div>
           </div>
-
-          {/* Mobile feature preview */}
-          <div className="lg:hidden mt-8">
-            <div className="text-center mb-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Why Choose Data Cleansing Pro?</h3>
-            </div>
-            <div className="grid gap-4">
-              {features.map((feature, index) => (
-                <motion.div
-                  key={feature.title}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.6 + index * 0.1 }}
-                  className="bg-white rounded-lg p-4 shadow-sm border"
-                >
-                  <div className="flex items-center mb-2">
-                    <feature.icon className="w-5 h-5 text-indigo-600 mr-3" />
-                    <h4 className="font-medium text-gray-900">{feature.title}</h4>
-                  </div>
-                  <p className="text-sm text-gray-600">{feature.description}</p>
-                </motion.div>
-              ))}
-            </div>
-          </div>
+          {/* Mobile feature preview is removed for cleaner full-screen layout */}
         </motion.div>
       </div>
     </div>

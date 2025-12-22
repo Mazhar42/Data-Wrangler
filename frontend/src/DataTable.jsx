@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-// import StatsModal from './StatsModal';
 
 const useDebounce = (value, delay) => {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -17,22 +16,28 @@ const useDebounce = (value, delay) => {
   return debouncedValue;
 };
 
-const DataTable = ({ title, data, theme, totalRows, currentPage, itemsPerPage, onPageChange, onCellChange, columnSearches, onColumnSearch, fullHeight = false, allColumns = [] }) => {
-  const [editedData, setEditedData] = useState(data);
+const DataTable = ({ title, data, theme, totalRows, currentPage, itemsPerPage, onPageChange, onCellChange, columnSearches, onColumnSearch, fullHeight = false, allColumns = [], enableStats = true, showTitle = true, editable = false, compact = false, enableSelection = false, selectionKey = 'id', onSelectionChange, clearSelectionSignal, onViewSelected, onEditSelected, onDeleteSelected, onClearSelection, linkColumns = [], getRowLink }) => {
   const [showModal, setShowModal] = useState(false);
   const [modalData, setModalData] = useState(null);
   const [localColumnSearches, setLocalColumnSearches] = useState(columnSearches);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
+  useEffect(() => {
+    setLocalColumnSearches(columnSearches);
+  }, [columnSearches]);
+
+  // Clear selection when external signal changes — depend ONLY on the signal
+  useEffect(() => {
+    if (clearSelectionSignal === undefined) return;
+    setSelectedIds(new Set());
+    if (onSelectionChange) onSelectionChange([]);
+  }, [clearSelectionSignal]);
+
+  
 
   const debouncedColumnSearches = useDebounce(localColumnSearches, 500);
 
-
-
   const [isInitialMount, setIsInitialMount] = useState(true);
-
-  // Sync editedData with data prop
-  useEffect(() => {
-    setEditedData(data);
-  }, [data]);
 
   useEffect(() => {
     if (isInitialMount) {
@@ -43,10 +48,6 @@ const DataTable = ({ title, data, theme, totalRows, currentPage, itemsPerPage, o
     onColumnSearch(debouncedColumnSearches);
   }, [debouncedColumnSearches, isInitialMount, onColumnSearch]);
 
-
-
-  // ...existing code...
-  // Always use the union of allColumns and all keys in data rows
   const columns = React.useMemo(() => {
     const colSet = new Set(allColumns);
     if (data && data.length > 0) {
@@ -55,39 +56,43 @@ const DataTable = ({ title, data, theme, totalRows, currentPage, itemsPerPage, o
     return Array.from(colSet);
   }, [allColumns, data]);
 
-  // ...existing code...
-  // Inline stats state
   const [showStats, setShowStats] = useState(false);
   const [selectedStatsCol, setSelectedStatsCol] = useState('');
   const [statsResult, setStatsResult] = useState(null);
-  // Find numeric columns
+
+  const toggleSelectAll = (checked) => {
+    if (!enableSelection) return;
+    const next = new Set();
+    if (checked) {
+      data.forEach(row => {
+        const id = row[selectionKey];
+        if (id !== undefined && id !== null) next.add(String(id));
+      });
+    }
+    setSelectedIds(next);
+    if (onSelectionChange) onSelectionChange(Array.from(next));
+  };
+
+  const toggleSelection = (row) => {
+    if (!enableSelection) return;
+    const id = row[selectionKey];
+    const key = String(id);
+    const next = new Set(selectedIds);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    setSelectedIds(next);
+    if (onSelectionChange) onSelectionChange(Array.from(next));
+  };
+
   const numericColumns = React.useMemo(() => {
     if (!data || data.length === 0) return [];
     return columns.filter(col => data.some(row => typeof row[col] === 'number' || (!isNaN(parseFloat(row[col])) && isFinite(row[col]))));
   }, [columns, data]);
 
-  // Find date columns
-  const dateColumns = React.useMemo(() => {
-    if (!data || data.length === 0) return [];
-    // Consider a column a date if at least one value parses to a valid date and is not just a number
-    return columns.filter(col =>
-      data.some(row => {
-        const v = row[col];
-        if (typeof v !== 'string') return false;
-        // Check for ISO or common date formats
-        const parsed = Date.parse(v);
-        return !isNaN(parsed) && isNaN(Number(v));
-      })
-    );
-  }, [columns, data]);
-
-  // Calculate stats when column selected
   useEffect(() => {
     if (!selectedStatsCol) {
       setStatsResult(null);
       return;
     }
-    // Get all numeric values for the column
     const values = data
       .map(row => {
         const v = row[selectedStatsCol];
@@ -107,10 +112,10 @@ const DataTable = ({ title, data, theme, totalRows, currentPage, itemsPerPage, o
 
   const handleCellBlur = (e, rowIndex, colKey) => {
     const newValue = e.target.innerText;
-    const oldValue = editedData[rowIndex][colKey];
+    const oldValue = data[rowIndex][colKey];
 
     if (newValue !== String(oldValue)) {
-      const occurrences = editedData.filter(row => String(row[colKey]) === String(oldValue)).length;
+      const occurrences = data.filter(row => String(row[colKey]) === String(oldValue)).length;
       setModalData({ rowIndex, colKey, oldValue, newValue, occurrences });
       setShowModal(true);
     }
@@ -129,7 +134,6 @@ const DataTable = ({ title, data, theme, totalRows, currentPage, itemsPerPage, o
   };
 
   const isDark = theme === 'dark';
-
   const totalPages = Math.ceil(totalRows / itemsPerPage);
 
   const handlePrevious = () => {
@@ -145,19 +149,31 @@ const DataTable = ({ title, data, theme, totalRows, currentPage, itemsPerPage, o
   };
 
   return (
-    <div className={`bg-background p-2 sm:p-4 rounded-lg shadow-md ${fullHeight ? 'h-full flex flex-col' : 'mt-4'}`}>
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
-        <h2 className="text-lg sm:text-xl font-semibold mb-2 sm:mb-0">{title}</h2>
-      </div>
-      <div className={`border rounded-lg flex-grow flex flex-col ${isDark ? 'border-gray-700' : 'border-gray-200'}`}> 
+    <div className={`bg-white ${compact ? 'p-0' : 'p-2 sm:p-4'} rounded-lg shadow-md ${fullHeight ? 'h-full flex flex-col' : (compact ? '' : 'mt-4')}`}>
+      {showTitle && (
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
+          <h2 className="text-lg sm:text-xl font-semibold mb-2 sm:mb-0">{title}</h2>
+        </div>
+      )}
+      <div className={`border rounded-lg flex flex-col ${isDark ? 'border-gray-700' : 'border-gray-200'}`}> 
         <div className="overflow-x-auto w-full">
           <div className="max-h-[60vh] overflow-auto">
             <table className="min-w-full border-collapse table-fixed">
               {columns.length >= 0 && (
                 <thead className={`sticky top-0 z-10 ${isDark ? 'bg-gray-900' : 'bg-gray-100'} border-b-2 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}> 
                   <tr>
+                    {enableSelection && (
+                      <th className={`px-2 py-2 border-r min-w-[40px] ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                        <input
+                          type="checkbox"
+                          checked={enableSelection && data.length > 0 && selectedIds.size === data.filter(r => r[selectionKey] !== undefined && r[selectionKey] !== null).length}
+                          onChange={(e) => toggleSelectAll(e.target.checked)}
+                          aria-label="Select all"
+                        />
+                      </th>
+                    )}
                     {columns.map((key) => (
-                      <th key={key} scope="col" className={`px-2 py-1 text-left text-xs font-bold border-r min-w-[120px] sm:min-w-[150px] ${isDark ? 'text-white border-gray-700' : 'text-gray-800 border-gray-200'}`}> 
+                      <th key={key} scope="col" className={`px-2 py-2 text-left text-sm font-semibold border-r min-w-[120px] sm:min-w-[150px] ${isDark ? 'text-white border-gray-700' : 'text-gray-800 border-gray-200'}`}> 
                         <div className="flex justify-between items-center">
                           <span className="capitalize">{key.replace(/_/g, ' ')}</span>
                         </div>
@@ -165,6 +181,9 @@ const DataTable = ({ title, data, theme, totalRows, currentPage, itemsPerPage, o
                     ))}
                   </tr>
                   <tr>
+                    {enableSelection && (
+                      <th className={`px-2 py-1 border-r min-w-[40px] ${isDark ? 'border-gray-700' : 'border-gray-200'}`}></th>
+                    )}
                     {columns.map((key) => (
                       <th key={`search-${key}`} scope="col" className={`px-2 py-1 border-r min-w-[120px] sm:min-w-[150px] ${isDark ? 'border-gray-700' : 'border-gray-200'}`}> 
                         <input
@@ -178,16 +197,17 @@ const DataTable = ({ title, data, theme, totalRows, currentPage, itemsPerPage, o
                       </th>
                     ))}
                   </tr>
+                  {/* Clear searches row removed; footer now handles this action */}
                 </thead>
               )}
               <tbody className={`divide-y ${isDark ? 'divide-gray-700 bg-gray-800' : 'divide-gray-200 bg-white'}`}> 
                 {columns.length === 0 ? (
                   <tr>
-                    <td className={`p-4 sm:p-8 text-center ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>No data loaded yet</td>
+                    <td colSpan={(enableSelection ? columns.length + 1 : columns.length)} className={`p-4 sm:p-8 text-center ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>No data loaded yet</td>
                   </tr>
-                ) : editedData.length === 0 ? (
+                ) : data.length === 0 ? (
                   <tr>
-                    <td colSpan={columns.length} className={`p-4 sm:p-8 text-center ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                    <td colSpan={(enableSelection ? columns.length + 1 : columns.length)} className={`p-4 sm:p-8 text-center ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
                       <div className="flex flex-col items-center">
                         <div className="text-lg mb-2">📭</div>
                         <div className="text-sm font-medium">No data found</div>
@@ -196,23 +216,45 @@ const DataTable = ({ title, data, theme, totalRows, currentPage, itemsPerPage, o
                     </td>
                   </tr>
                 ) : (
-                  editedData.map((row, i) => (
+                  data.map((row, i) => (
                     <tr key={i} className={`${i % 2 === 0 ? (isDark ? 'bg-gray-800' : 'bg-white') : (isDark ? 'bg-gray-750' : 'bg-gray-50')} hover:${isDark ? 'bg-gray-700' : 'bg-blue-50'} transition-colors`}>
+                      {enableSelection && (
+                        <td className={`px-2 py-2 border-r min-w-[40px] ${isDark ? 'border-gray-600' : 'border-gray-200'}`}>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(String(row[selectionKey]))}
+                            onChange={() => toggleSelection(row)}
+                            aria-label="Select row"
+                          />
+                        </td>
+                      )}
                       {columns.map((key) => (
                         <td 
                           key={key} 
-                          className={`px-2 py-1 whitespace-nowrap text-xs border-r min-w-[120px] sm:min-w-[150px] ${isDark ? 'text-gray-200 border-gray-600' : 'text-gray-800 border-gray-200'} ${(numericColumns.includes(key) || dateColumns.includes(key)) ? (isDark ? 'bg-gray-700 text-gray-400 italic' : 'bg-gray-100 text-gray-400 italic') : ''}`}
-                          contentEditable={!(numericColumns.includes(key) || dateColumns.includes(key))}
-                          onBlur={!(numericColumns.includes(key) || dateColumns.includes(key)) ? (e) => handleCellBlur(e, i, key) : undefined}
+                          className={`px-2 py-2 whitespace-nowrap text-sm border-r min-w-[120px] sm:min-w-[150px] ${isDark ? 'border-gray-600' : 'border-gray-200'} text-gray-600`}
+                          contentEditable={editable && !(numericColumns.includes(key) || key === 'name')}
+                          onBlur={editable && !(numericColumns.includes(key) || key === 'name') ? (e) => handleCellBlur(e, i, key) : undefined}
                           suppressContentEditableWarning={true}
-                          style={{ cursor: (numericColumns.includes(key) || dateColumns.includes(key)) ? 'not-allowed' : 'text' }}
+                          style={{ cursor: 'text' }}
                         >
-                          {String(row[key] ?? '')}
-                          {(numericColumns.includes(key) || dateColumns.includes(key)) && (
-                            <span className="ml-1 align-middle" title="Not editable">
-                              <svg className="inline w-3 h-3 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M18 12a6 6 0 11-12 0 6 6 0 0112 0zm-6 3v.01M12 9h.01" /></svg>
-                            </span>
-                          )}
+                          {(() => {
+                            const value = row[key];
+                            const text = String(value ?? '');
+                            const shouldLink = Array.isArray(linkColumns) && linkColumns.includes(key) && typeof getRowLink === 'function';
+                            if (shouldLink) {
+                              const url = getRowLink(row);
+                              return (
+                                <a href={url} className={`text-blue-600 hover:underline ${isDark ? 'text-blue-400 hover:text-blue-300' : ''}`}>{text}</a>
+                              );
+                            }
+                            if (key === 'name' && row.id) {
+                              return (
+                                <a href={`/projects/${row.id}`} className={`text-blue-600 hover:underline ${isDark ? 'text-blue-400 hover:text-blue-300' : ''}`}>{text}</a>
+                              );
+                            }
+                            return text;
+                          })()}
+                          {/* no non-editable indicator */}
                         </td>
                       ))}
                     </tr>
@@ -224,12 +266,70 @@ const DataTable = ({ title, data, theme, totalRows, currentPage, itemsPerPage, o
           <table className="min-w-full border-collapse table-fixed">
             <tfoot className={`${isDark ? 'bg-gray-800' : 'bg-white'} border-t-2 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
               <tr>
-                <td colSpan={columns.length}>
-                  <div className="px-2 sm:px-4 py-3">
+                <td colSpan={(enableSelection ? columns.length + 1 : columns.length)}>
+                  <div className={`${compact ? 'p-0' : 'px-2 sm:px-4 py-3'}`}>
+                    {enableSelection && selectedIds.size > 0 && (
+                      <div className={`${compact ? 'mb-0' : 'mb-2'} flex items-center justify-between px-4 py-2 bg-black text-white rounded`}>
+                        <span className="text-xs">{selectedIds.size === 1 ? '1 selected item' : `${selectedIds.size} selected items`}</span>
+                        <div className="flex items-center gap-2">
+                          {selectedIds.size === 1 && onViewSelected && (
+                            <button
+                              className="text-xs px-3 py-1 rounded bg-white text-black hover:bg-gray-100"
+                              onClick={() => onViewSelected(Array.from(selectedIds)[0])}
+                            >
+                              Project Detail
+                            </button>
+                          )}
+                          {selectedIds.size === 1 && onEditSelected && (
+                            <button
+                              className="text-xs px-3 py-1 rounded bg-white text-black border border-gray-300 hover:bg-gray-100"
+                              onClick={() => onEditSelected(Array.from(selectedIds)[0])}
+                            >
+                              Edit
+                            </button>
+                          )}
+                          {onDeleteSelected && (
+                            <button
+                              className="text-xs px-3 py-1 rounded bg-red-600 text-white hover:bg-red-700"
+                              onClick={() => onDeleteSelected(Array.from(selectedIds))}
+                            >
+                              Delete
+                            </button>
+                          )}
+                          <button
+                            className="text-xs px-3 py-1 rounded bg-gray-300 text-black hover:bg-gray-400"
+                            onClick={() => { setSelectedIds(new Set()); if (onSelectionChange) onSelectionChange([]); onClearSelection && onClearSelection(); }}
+                          >
+                            Clear selection
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {Object.values(localColumnSearches || {}).some(v => v) && (
+                      <div className={`${compact ? 'mb-0' : 'mb-2'} flex items-center justify-between px-4 py-2 bg-black text-white rounded`}>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs">Filters applied</span>
+                          {Object.entries(localColumnSearches || {})
+                            .filter(([_, val]) => !!val)
+                            .map(([key, val]) => (
+                              <span key={`chip-${key}`} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-700 text-white">
+                                {key}: {String(val)}
+                              </span>
+                            ))}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => { setLocalColumnSearches({}); onColumnSearch({}); }}
+                          className="text-xs px-3 py-1 rounded bg-gray-300 text-black hover:bg-gray-400"
+                        >
+                          Clear search
+                        </button>
+                      </div>
+                    )}
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
                       <div className="flex items-center space-x-2 sm:space-x-4 mb-2 sm:mb-0">
                         <div className={`text-xs sm:text-sm font-medium ${isDark ? 'text-gray-200' : 'text-gray-700'}`}> 
-                          <span className={`inline-flex items-center px-2 py-0.5 sm:px-2.5 sm:py-0.5 rounded-full text-xs font-medium ${isDark ? 'bg-blue-900 text-blue-200' : 'bg-blue-100 text-blue-800'}`}> 
+                          <span className={`inline-flex items-center px-2 py-0.5 sm:px-2.5 sm:py-0.5 rounded-full text-xs font-medium mx-2 my-1 ${isDark ? 'bg-gray-700 text-gray-200' : 'bg-gray-200 text-gray-800'}`}> 
                             {(() => {
                               const start = (currentPage - 1) * itemsPerPage + 1;
                               let end = currentPage * itemsPerPage;
@@ -239,39 +339,41 @@ const DataTable = ({ title, data, theme, totalRows, currentPage, itemsPerPage, o
                             })()}
                           </span>
                         </div>
-                        <div className="ml-4 flex items-center space-x-2">
-                          <button
-                            onClick={() => setShowStats(v => !v)}
-                            className={`inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-full shadow-sm text-white ${isDark ? 'bg-green-600 hover:bg-green-700' : 'bg-green-500 hover:bg-green-600'}`}
-                          >
-                            Get Stats
-                          </button>
-                          {showStats && (
-                            <>
-                              <select
-                                className={`ml-2 px-2 py-1 rounded border text-xs ${isDark ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'}`}
-                                value={selectedStatsCol}
-                                onChange={e => setSelectedStatsCol(e.target.value)}
-                              >
-                                <option value="">Select column</option>
-                                {numericColumns.map(col => (
-                                  <option key={col} value={col}>{col}</option>
-                                ))}
-                              </select>
-                              {selectedStatsCol && statsResult && (
-                                <span className={
-                                  `ml-3 inline-flex items-center px-4 py-2 rounded-lg shadow text-xs sm:text-sm font-semibold border ${isDark ? 'bg-green-900 border-green-700 text-green-200' : 'bg-green-50 border-green-300 text-green-800'} transition-all duration-200`
-                                }>
-                                  <svg className={`w-4 h-4 mr-2 ${isDark ? 'text-green-300' : 'text-green-500'}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 17a4 4 0 004-4V5a4 4 0 10-8 0v8a4 4 0 004 4zm0 0v2m0 0h2m-2 0H9" />
-                                  </svg>
-                                  <span className="mr-3">SUM: <span className="font-bold">{statsResult.total}</span></span>
-                                  <span>AVG: <span className="font-bold">{statsResult.average}</span></span>
-                                </span>
-                              )}
-                            </>
-                          )}
-                        </div>
+                        {enableStats && (
+                          <div className="ml-4 flex items-center space-x-2">
+                            <button
+                              onClick={() => setShowStats(v => !v)}
+                              className={`inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-full shadow-sm text-white ${isDark ? 'bg-green-600 hover:bg-green-700' : 'bg-green-500 hover:bg-green-600'}`}
+                            >
+                              Get Stats
+                            </button>
+                            {showStats && (
+                              <>
+                                <select
+                                  className={`ml-2 px-2 py-1 rounded border text-xs ${isDark ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'}`}
+                                  value={selectedStatsCol}
+                                  onChange={e => setSelectedStatsCol(e.target.value)}
+                                >
+                                  <option value="">Select column</option>
+                                  {numericColumns.map(col => (
+                                    <option key={col} value={col}>{col}</option>
+                                  ))}
+                                </select>
+                                {selectedStatsCol && statsResult && (
+                                  <span className={
+                                    `ml-3 inline-flex items-center px-3 py-1 rounded-lg shadow text-xs font-semibold border ${isDark ? 'bg-green-900 border-green-700 text-green-200' : 'bg-green-50 border-green-300 text-green-800'} transition-all duration-200`
+                                  }>
+                                    <svg className={`w-4 h-4 mr-2 ${isDark ? 'text-green-300' : 'text-green-500'}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M11 17a4 4 0 004-4V5a4 4 0 10-8 0v8a4 4 0 004 4zm0 0v2m0 0h2m-2 0H9" />
+                                    </svg>
+                                    <span className="mr-3">Sum: <span className="font-bold">{statsResult.total}</span></span>
+                                    <span>Avg: <span className="font-bold">{statsResult.average}</span></span>
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -279,13 +381,14 @@ const DataTable = ({ title, data, theme, totalRows, currentPage, itemsPerPage, o
               </tr>
             </tfoot>
           </table>
-        </div>
       </div>
-      {totalRows > itemsPerPage && (
-        <div className="flex flex-col sm:flex-row justify-between items-center mt-4 space-y-2 sm:space-y-0">
-          <button
-            onClick={handlePrevious}
-            disabled={currentPage === 1}
+    </div>
+    {/* Clear search footer now rendered inside table footer above range text */}
+    {totalRows > itemsPerPage && (
+      <div className="flex flex-col sm:flex-row justify-between items-center mt-4 space-y-2 sm:space-y-0">
+        <button
+          onClick={handlePrevious}
+          disabled={currentPage === 1}
             className="w-full sm:w-auto bg-blue-500 text-white px-4 py-2 rounded-full hover:bg-blue-600 disabled:bg-gray-400"
           >
             Previous
@@ -302,9 +405,8 @@ const DataTable = ({ title, data, theme, totalRows, currentPage, itemsPerPage, o
           </button>
         </div>
       )}
-      {/* Inline stats UI replaces modal */}
       {showModal && modalData && (
-        <div className="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-gray bg-opacity-40 flex items-center justify-center z-50 p-4">
           <div className={`bg-white ${isDark ? 'dark:bg-gray-900' : ''} rounded-lg shadow-2xl p-6 w-full max-w-sm sm:max-w-md transform transition-all`}>
             <div className="text-center">
               <div className={`mx-auto flex items-center justify-center h-12 w-12 rounded-full ${isDark ? 'bg-blue-800' : 'bg-blue-100'}`}> 
@@ -314,7 +416,7 @@ const DataTable = ({ title, data, theme, totalRows, currentPage, itemsPerPage, o
               </div>
               <h3 className={`text-lg leading-6 font-medium ${isDark ? 'text-white' : 'text-gray-900'} mt-4`}>Confirm Change</h3>
               <div className={`mt-2 px-4 sm:px-7 py-3`}>
-                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>There are {modalData.occurrences} items with the value "{String(modalData.oldValue)}". Do you want to change them all to "{String(modalData.newValue)}"?</p>
+                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>There are {modalData.occurrences} items with the value &quot;{String(modalData.oldValue)}&quot;. Do you want to change them all to &quot;{String(modalData.newValue)}&quot;?</p>
               </div>
             </div>
             <div className="mt-5 sm:mt-6 space-y-3 sm:space-y-0 sm:grid sm:grid-cols-2 sm:gap-3 sm:grid-flow-row-dense">

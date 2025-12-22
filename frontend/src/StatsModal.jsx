@@ -57,18 +57,18 @@ const StatsModal = ({ fileId, columns, theme, onClose }) => {
   const isDark = theme === 'dark';
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div ref={modalRef} className={`p-8 w-1/2 max-w-2xl shadow-2xl rounded-xl transition-all ${isDark ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'}`}>
+    <div className="fixed inset-0 bg-gray bg-opacity-40 backdrop-blur-sm flex items-center justify-center z-50">
+      <div ref={modalRef} className={`p-8 w-1/2 max-w-2xl shadow-2xl rounded-xl transition-all ${isDark ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'}`}> 
         <h2 className="text-xl font-semibold mb-4">Column Statistics</h2>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label htmlFor="columns" className="block text-sm font-medium text-text-secondary">Select Columns</label>
+            <label htmlFor="columns" className="block text-sm font-medium text-gray-700">Select Columns</label>
             <select
               multiple
               id="columns"
               value={selectedColumns}
               onChange={(e) => setSelectedColumns(Array.from(e.target.selectedOptions, option => option.value))}
-              className={`mt-1 block w-full border border-input-border bg-input-background rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-violet-500 focus:border-violet-500 sm:text-sm ${isDark ? 'text-white' : 'text-black'}`}>
+              className={`mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm ${isDark ? 'text-white' : 'text-black'}`}>
               {columns.map(col => <option key={col} value={col}>{col}</option>)}
             </select>
           </div>

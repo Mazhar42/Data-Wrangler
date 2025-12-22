@@ -13,7 +13,7 @@ const DownloadModal = ({ isOpen, onClose, onDownload, theme }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+    <div className="fixed inset-0 bg-gray bg-opacity-40 backdrop-blur-sm flex justify-center items-center z-50">
       <div className={`p-8 rounded-lg shadow-lg w-1/3 ${theme === 'dark' ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'}`}>
         <h2 className="text-2xl font-bold mb-4">Download Modified File</h2>
         <p className="mb-4">Select the format you want to download the modified file in.</p>

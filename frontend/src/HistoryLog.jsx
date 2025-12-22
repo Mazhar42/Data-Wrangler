@@ -1,25 +1,28 @@
 import React, { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { historyAPI } from './utils/api';
 
 const HistoryLog = () => {
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const { id } = useParams();
 
     useEffect(() => {
         const fetchHistory = async () => {
+            if (!id) return;
             try {
-                const response = await historyAPI.getAll();
+                const response = await historyAPI.getProjectHistory(id);
                 setHistory(response);
                 setLoading(false);
-            } catch (err) {
+            } catch {
                 setError('Failed to fetch history');
                 setLoading(false);
             }
         };
 
         fetchHistory();
-    }, []);
+    }, [id]);
 
     if (loading) {
         return <div>Loading...</div>;
@@ -31,7 +34,7 @@ const HistoryLog = () => {
 
     return (
         <div className="container mx-auto p-4">
-            <h1 className="text-2xl font-bold mb-4">History Log</h1>
+            <h1 className="text-3xl font-roboto font-extralight text-gray-900 mb-4">History Log</h1>
             <div className="overflow-x-auto">
                 <table className="min-w-full bg-white">
                     <thead>

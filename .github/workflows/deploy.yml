@@ -1,0 +1,103 @@
+name: Deploy to Hostinger VPS
+
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Convert repository name to lowercase
+        run: |
+          echo "IMAGE_NAME_LOWER=$(echo ${{ env.IMAGE_NAME }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      - name: Build and push Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}/backend:latest
+
+      - name: Build and push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}/frontend:latest
+          build-args: |
+            VITE_BACKEND_URL=${{ secrets.VITE_BACKEND_URL }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Convert repository name to lowercase
+        run: |
+          echo "IMAGE_NAME_LOWER=$(echo ${{ env.IMAGE_NAME }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      - name: Prepare docker-compose.prod.yml
+        run: |
+          sed -i "s|\${GITHUB_REPOSITORY}|${{ env.IMAGE_NAME_LOWER }}|g" docker-compose.prod.yml
+
+      - name: Copy docker-compose.prod.yml to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          source: "docker-compose.prod.yml"
+          target: "/home/${{ secrets.USERNAME }}/app"
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd /home/${{ secrets.USERNAME }}/app
+            mv docker-compose.prod.yml docker-compose.yml
+            
+            # Login to GHCR
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+            # Export env vars (make sure these are set in GitHub Secrets)
+            export DEEPSEEK_API_KEY="${{ secrets.DEEPSEEK_API_KEY }}"
+            export OLLAMA_API_URL="${{ secrets.OLLAMA_API_URL }}"
+            export OLLAMA_MODEL="${{ secrets.OLLAMA_MODEL }}"
+            export SECRET_KEY="${{ secrets.SECRET_KEY }}"
+            export VITE_BACKEND_URL="${{ secrets.VITE_BACKEND_URL }}"
+            
+            # Pull and Restart
+            docker-compose pull
+            docker-compose up -d --remove-orphans
+
+            # Pull the Ollama model (wait a bit for the service to be ready)
+            echo "Waiting for Ollama to start..."
+            sleep 10
+            MODEL=${OLLAMA_MODEL:-phi3}
+            echo "Pulling Ollama model: $MODEL"
+            docker exec cleansing_ollama ollama pull $MODEL

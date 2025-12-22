@@ -59,7 +59,7 @@ const CreateProjectModal = ({ isOpen, onClose, onCreate }) => {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 bg-gray bg-opacity-40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={handleClose}
         >
           <motion.div
@@ -163,7 +163,7 @@ const CreateProjectModal = ({ isOpen, onClose, onCreate }) => {
                       What happens next?
                     </h4>
                     <p className="text-sm text-blue-700">
-                      After creating your project, you'll be able to upload CSV or Excel files 
+                      After creating your project, you&apos;ll be able to upload CSV or Excel files 
                       and start applying data cleansing operations.
                     </p>
                   </div>

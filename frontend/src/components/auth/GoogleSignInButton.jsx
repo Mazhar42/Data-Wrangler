@@ -1,11 +1,21 @@
 import { FcGoogle } from 'react-icons/fc';
 import { motion } from 'framer-motion';
-
+import { useState } from 'react';
+import { useAuth } from '../../hooks/useAuth';
 
 const GoogleSignInButton = () => {
-  const handleGoogleLogin = () => {
-    // Handle Google login logic
-    console.log('Google login clicked');
+  const { getGoogleAuthUrl } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleGoogleLogin = async () => {
+    setIsLoading(true);
+    try {
+      const url = await getGoogleAuthUrl();
+      window.location.href = url;
+    } catch (error) {
+      console.error('Google sign-in failed:', error);
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -13,10 +23,14 @@ const GoogleSignInButton = () => {
       whileHover={{ scale: 1.05 }}
       whileTap={{ scale: 0.95 }}
       onClick={handleGoogleLogin}
-      className="flex items-center justify-center w-full px-4 py-2 space-x-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+      disabled={isLoading}
+      className="inline-flex items-center justify-center w-10 h-10 p-0 bg-gray-200 hover:bg-gray-300 rounded-full transition-colors duration-150 border-0 shadow-none focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
     >
-      <FcGoogle className="w-5 h-5" />
-      <span>Sign in with Google</span>
+      {isLoading ? (
+        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-700"></div>
+      ) : (
+        <FcGoogle className="w-6 h-6" />
+      )}
     </motion.button>
   );
 };

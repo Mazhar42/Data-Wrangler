@@ -10,6 +10,8 @@ services:
         fromDatabase:
           name: cleansing-db
           property: connectionString
+      - key: DEEPSEEK_API_KEY
+        value: "sk-052f59fba39549eb98a6261614785c16"
 
 databases:
   - name: cleansing-db
