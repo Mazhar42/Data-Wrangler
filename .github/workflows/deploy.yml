@@ -101,7 +101,7 @@ jobs:
             # Clean up unused images to free up space
             docker image prune -f
 
-            # Pull the Ollama model (wait a bit for the service to be ready)
+            # Pull the Ollama model to ensure it's ready (avoids timeout on first request)
             echo "Waiting for Ollama to start..."
             sleep 10
             MODEL=${OLLAMA_MODEL:-phi3}
