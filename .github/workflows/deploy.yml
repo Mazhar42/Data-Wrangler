@@ -92,8 +92,8 @@ jobs:
             export VITE_BACKEND_URL="${{ secrets.VITE_BACKEND_URL }}"
             
             # Pull and Restart
-            docker-compose pull
-            docker-compose up -d --remove-orphans
+            docker compose pull
+            docker compose up -d --remove-orphans
 
             # Pull the Ollama model (wait a bit for the service to be ready)
             echo "Waiting for Ollama to start..."
