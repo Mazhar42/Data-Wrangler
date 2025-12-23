@@ -68,8 +68,11 @@ jobs:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
+          port: 22
           source: "docker-compose.prod.yml"
           target: "/home/${{ secrets.USERNAME }}/app"
+          timeout: 30s
+          command_timeout: 30m
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
