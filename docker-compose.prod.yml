@@ -13,7 +13,7 @@ services:
       - SECRET_KEY=${SECRET_KEY}
       - ACCESS_TOKEN_EXPIRE_MINUTES=1440
       # Update this with your actual VPS IP or Domain
-      - CORS_ORIGINS=http://localhost,http://localhost:80,${VITE_BACKEND_URL} 
+      - CORS_ORIGINS=http://localhost,http://localhost:80,${VITE_BACKEND_URL},http://72.62.72.144:3000
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
       - OLLAMA_API_URL=http://ollama:11434/api/chat
       - OLLAMA_MODEL=${OLLAMA_MODEL:-phi3}
