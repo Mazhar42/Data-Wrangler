@@ -97,6 +97,9 @@ jobs:
             # Pull and Restart
             docker compose pull
             docker compose up -d --remove-orphans
+            
+            # Clean up unused images to free up space
+            docker image prune -f
 
             # Pull the Ollama model (wait a bit for the service to be ready)
             echo "Waiting for Ollama to start..."
