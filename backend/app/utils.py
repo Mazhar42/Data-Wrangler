@@ -564,3 +564,48 @@ def detect_anomalies_and_duplicates(df: pd.DataFrame, column_name: str, detectio
     # For now, we'll keep it simple and focus on country type anomalies.
 
     return {"near_duplicates": near_duplicates, "anomalies": anomalies}
+
+def apply_formula(df: pd.DataFrame, formula_name: str, formula_expression: str) -> pd.DataFrame:
+    """
+    Applies a formula to create a new column in the DataFrame using `asteval`.
+    Supports basic arithmetic and column references.
+    """
+    if not formula_name or not formula_expression:
+        raise ValueError("Formula name and expression are required.")
+
+    from asteval import Interpreter
+    aeval = Interpreter()
+
+    # Define a helper to access columns safely (handling spaces, etc.)
+    def col(col_name):
+        if col_name not in df.columns:
+             raise ValueError(f"Column '{col_name}' not found.")
+        # Return as a numpy array or list for vector operations if supported by asteval/numpy
+        # Ideally, we return the pandas Series
+        return df[col_name].values
+
+    # Register the helper function in the interpreter's symbol table
+    aeval.symtable['column'] = col
+    aeval.symtable['col'] = col # Alias for convenience
+
+    # Also make numpy available if needed for advanced math
+    import numpy as np
+    aeval.symtable['np'] = np
+
+    try:
+        # Evaluate the expression
+        # The result should be an array/series of the same length as the DF
+        result = aeval(formula_expression)
+        
+        # Check for errors during evaluation
+        if len(aeval.error) > 0:
+             # Extract error messages
+             error_msg = "; ".join([str(e.get_error()) for e in aeval.error])
+             raise ValueError(f"Formula evaluation failed: {error_msg}")
+
+        # Assign the result to the new column
+        df[formula_name] = result
+        return df
+
+    except Exception as e:
+        raise ValueError(f"Error applying formula: {e}")
