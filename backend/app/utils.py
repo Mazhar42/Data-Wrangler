@@ -567,45 +567,90 @@ def detect_anomalies_and_duplicates(df: pd.DataFrame, column_name: str, detectio
 
 def apply_formula(df: pd.DataFrame, formula_name: str, formula_expression: str) -> pd.DataFrame:
     """
-    Applies a formula to create a new column in the DataFrame using `asteval`.
-    Supports basic arithmetic and column references.
+    Applies a formula to create a new column in the DataFrame with a safe evaluator.
+    Allowed syntax:
+      - Arithmetic: +, -, *, /, //, %, **, unary +/-
+      - Parentheses
+      - Column references: column('Column Name')
+      - Numeric constants
+    Disallowed:
+      - Any other functions, names, attributes, indexing, comprehensions, lambdas, etc.
     """
     if not formula_name or not formula_expression:
         raise ValueError("Formula name and expression are required.")
 
-    from asteval import Interpreter
-    aeval = Interpreter()
-
-    # Define a helper to access columns safely (handling spaces, etc.)
-    def col(col_name):
-        if col_name not in df.columns:
-             raise ValueError(f"Column '{col_name}' not found.")
-        # Return as a numpy array or list for vector operations if supported by asteval/numpy
-        # Ideally, we return the pandas Series
-        return df[col_name].values
-
-    # Register the helper function in the interpreter's symbol table
-    aeval.symtable['column'] = col
-    aeval.symtable['col'] = col # Alias for convenience
-
-    # Also make numpy available if needed for advanced math
+    import ast
     import numpy as np
-    aeval.symtable['np'] = np
+    import pandas as pd
+
+    # Hard guard against extremely long expressions (resource abuse)
+    if len(formula_expression) > 500:
+        raise ValueError("Formula is too long.")
+
+    tree = ast.parse(formula_expression, mode='eval')
+
+    def ensure_numeric(series: pd.Series) -> np.ndarray:
+        # Convert to numeric (coerce) to support arithmetic on numeric-like strings
+        return pd.to_numeric(series, errors='coerce').values
+
+    def eval_node(node):
+        if isinstance(node, ast.Expression):
+            return eval_node(node.body)
+
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, (int, float)):
+                return node.value
+            raise ValueError("Only numeric constants are allowed.")
+
+        if isinstance(node, ast.UnaryOp):
+            val = eval_node(node.operand)
+            if isinstance(node.op, ast.UAdd):
+                return +val
+            if isinstance(node.op, ast.USub):
+                return -val
+            raise ValueError("Unsupported unary operator.")
+
+        if isinstance(node, ast.BinOp):
+            left = eval_node(node.left)
+            right = eval_node(node.right)
+            op = node.op
+            if isinstance(op, ast.Add):
+                return left + right
+            if isinstance(op, ast.Sub):
+                return left - right
+            if isinstance(op, ast.Mult):
+                return left * right
+            if isinstance(op, ast.Div):
+                return left / right
+            if isinstance(op, ast.FloorDiv):
+                return left // right
+            if isinstance(op, ast.Mod):
+                return left % right
+            if isinstance(op, ast.Pow):
+                return left ** right
+            raise ValueError("Unsupported binary operator.")
+
+        if isinstance(node, ast.Call):
+            # Only allow: column('name')
+            if not (isinstance(node.func, ast.Name) and node.func.id == 'column'):
+                raise ValueError("Only column() function is allowed.")
+            if len(node.args) != 1 or not isinstance(node.args[0], ast.Constant) or not isinstance(node.args[0].value, str):
+                raise ValueError("column() expects a single string argument.")
+            col_name = node.args[0].value
+            if col_name not in df.columns:
+                raise ValueError(f"Column '{col_name}' not found.")
+            return ensure_numeric(df[col_name])
+
+        # Block everything else
+        raise ValueError("Unsupported expression element.")
 
     try:
-        # Evaluate the expression
-        # The result should be an array/series of the same length as the DF
-        result = aeval(formula_expression)
-        
-        # Check for errors during evaluation
-        if len(aeval.error) > 0:
-             # Extract error messages
-             error_msg = "; ".join([str(e.get_error()) for e in aeval.error])
-             raise ValueError(f"Formula evaluation failed: {error_msg}")
-
+        result = eval_node(tree)
+        # Broadcast scalars to match length if needed
+        if isinstance(result, (int, float)):
+            result = np.full(len(df), result)
         # Assign the result to the new column
         df[formula_name] = result
         return df
-
     except Exception as e:
         raise ValueError(f"Error applying formula: {e}")

@@ -33,8 +33,6 @@ services:
     restart: always
     volumes:
       - ollama_data:/root/.ollama
-    ports:
-      - "11434:11434"
 
   frontend:
     image: ghcr.io/${GITHUB_REPOSITORY}/frontend:latest

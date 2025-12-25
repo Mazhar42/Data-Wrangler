@@ -17,6 +17,8 @@ from asteval import Interpreter
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status, Body
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.orm import Session
 from . import models, schemas, crud, utils, auth, chat
 from .database import engine, Base, get_db
@@ -34,6 +36,15 @@ app = FastAPI(
     title='Data Cleansing Backend (Starter)',
     default_response_class=CustomJSONResponse
 )
+
+# Restrict allowed hosts to your IP/domain and localhost (adjust as needed)
+allowed_hosts = [
+    "localhost",
+    "127.0.0.1",
+    "72.62.72.144",
+    "*.hstgr.cloud",
+]
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
 
 
@@ -59,6 +70,18 @@ app.add_middleware(
     expose_headers=["*"]
 )
 
+# Add basic security headers to all responses
+async def security_headers_middleware(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["Referrer-Policy"] = "no-referrer-when-downgrade"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    # Minimal CSP to reduce risk; adjust connect-src to your backend domain/IP
+    response.headers["Content-Security-Policy"] = "default-src 'self'; connect-src 'self' http://72.62.72.144:8001; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'self';"
+    return response
+
+app.add_middleware(BaseHTTPMiddleware, dispatch=security_headers_middleware)
 app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'uploads')
